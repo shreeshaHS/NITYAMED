@@ -1,0 +1,27 @@
+# Secrets & environment variables
+.env
+.env.*
+!.env.example
+backend/.env
+mobile/.env
+
+# Python / Backend
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.db
+*.sqlite3
+
+# Node / Expo / Web
+node_modules/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+*.tsbuildinfo
+
+# OS / Editor
+.DS_Store
+Thumbs.db

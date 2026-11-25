@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- NityaMed Official Emblem: Continuity Loop + Safety Shield + Dual-Tone Capsule + Reminder Chime Node -->
+  <path
+    d="M 402.6 370.5 A 186 186 0 1 1 288.3 72.8"
+    fill="none"
+    stroke="#0D6E6E"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+  <circle cx="337.5" cy="88.8" r="15" fill="#10B981" />
+  <path
+    d="M 380.5 117.8 A 186 186 0 0 1 439.2 223.7"
+    fill="none"
+    stroke="#10B981"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+  <path
+    d="M 407.5 227.5 L 472.5 218.5 L 444.0 272.0 Z"
+    fill="#10B981"
+    stroke="#10B981"
+    stroke-width="10"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 256 126 C 308 126 348 139 363 149 C 370 154 372 161 372 171 L 372 250 C 372 322 317 372 264 395 C 258 398 254 398 248 395 C 195 372 140 322 140 250 L 140 171 C 140 161 142 154 149 149 C 164 139 204 126 256 126 Z"
+    fill="#0D6E6E"
+  />
+  <g transform="translate(256 248) rotate(-45)">
+    <path d="M -29 -58 A 29 29 0 0 1 29 -58 L 29 -4 L -29 -4 Z" fill="#FFFFFF" />
+    <path d="M -29 4 L 29 4 L 29 58 A 29 29 0 0 1 -29 58 Z" fill="#10B981" />
+  </g>
+</svg>
