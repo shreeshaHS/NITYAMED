@@ -17,8 +17,6 @@ from app.main import create_app
 def _isolate_test_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Ensure tests run with deterministic dev defaults instead of local .env SMTP credentials."""
     monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
-    monkeypatch.setenv("BREVO_API_KEY", "")
-    monkeypatch.setenv("RESEND_API_KEY", "")
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("SMTP_USER", "")
     monkeypatch.setenv("SMTP_PASSWORD", "")

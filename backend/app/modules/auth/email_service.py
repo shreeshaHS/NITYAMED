@@ -1,49 +1,13 @@
-"""Email delivery service supporting Brevo/Resend HTTPS APIs, SMTP, and safe dev logging."""
+"""Email delivery service supporting IPv4 SMTP and safe non-blocking dev logging."""
 
 from email.message import EmailMessage
 import logging
 import smtplib
 import socket
 
-import httpx
-
 from app.core.config import get_settings
 
 logger = logging.getLogger("nityamed.email")
-
-
-def _send_via_brevo(api_key: str, from_email: str, to_email: str, subject: str, body: str) -> bool:
-    """Send email over HTTPS (port 443) via Brevo Transactional API."""
-    resp = httpx.post(
-        "https://api.brevo.com/v3/smtp/email",
-        headers={"api-key": api_key, "Content-Type": "application/json"},
-        json={
-            "sender": {"name": "NityaMed", "email": from_email},
-            "to": [{"email": to_email}],
-            "subject": subject,
-            "textContent": body,
-        },
-        timeout=10.0,
-    )
-    resp.raise_for_status()
-    return True
-
-
-def _send_via_resend(api_key: str, from_email: str, to_email: str, subject: str, body: str) -> bool:
-    """Send email over HTTPS (port 443) via Resend API."""
-    resp = httpx.post(
-        "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "from": f"NityaMed <{from_email}>",
-            "to": [to_email],
-            "subject": subject,
-            "text": body,
-        },
-        timeout=10.0,
-    )
-    resp.raise_for_status()
-    return True
 
 
 def _resolve_ipv4_host(host: str, port: int) -> str:
@@ -58,33 +22,13 @@ def _resolve_ipv4_host(host: str, port: int) -> str:
 
 
 def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, str]:
-    """Send a plain-text email via Brevo HTTPS, Resend HTTPS, or SMTP.
-
-    Never raises transport errors to callers so auth/maintenance endpoints stay resilient.
-    """
+    """Send a plain-text email via SMTP if configured without raising transport errors."""
     settings = get_settings()
-    sender = settings.smtp_from_email or settings.smtp_user or "noreply@nityamed.local"
-
-    if settings.brevo_api_key:
-        try:
-            _send_via_brevo(settings.brevo_api_key, sender, to_email, subject, body)
-            return True, f"Sent via Brevo HTTPS API to {to_email}."
-        except Exception as exc:
-            logger.warning("Brevo HTTPS email failed: %s", exc)
-            return False, f"Brevo delivery error: {exc}"
-
-    if settings.resend_api_key:
-        try:
-            _send_via_resend(settings.resend_api_key, sender, to_email, subject, body)
-            return True, f"Sent via Resend HTTPS API to {to_email}."
-        except Exception as exc:
-            logger.warning("Resend HTTPS email failed: %s", exc)
-            return False, f"Resend delivery error: {exc}"
-
     if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
         logger.info("Dev email to %s | Subject: %s | Body: %s", to_email, subject, body)
-        return False, "No email provider configured; logged in local dev mode."
+        return False, "SMTP is not configured; logged in local dev mode."
 
+    sender = settings.smtp_from_email or settings.smtp_user
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = sender
@@ -102,14 +46,14 @@ def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, s
                 server.starttls()
                 server.login(settings.smtp_user, settings.smtp_password)
                 server.send_message(msg)
-        return True, f"SMTP test email sent successfully to {to_email}."
+        return True, f"SMTP email sent successfully to {to_email}."
     except Exception as exc:
         logger.warning("SMTP delivery failed to %s: %s", to_email, exc)
         return False, f"SMTP delivery error: {exc}"
 
 
 def send_email(to_email: str, subject: str, body: str) -> bool:
-    """Send an email and return whether external delivery succeeded."""
+    """Send an email via SMTP and return whether delivery succeeded."""
     sent, _ = send_email_detailed(to_email, subject, body)
     return sent
 

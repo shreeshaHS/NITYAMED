@@ -34,8 +34,6 @@ class Settings(BaseSettings):
     external_med_timeout_sec: float = 5.0
 
     require_email_verification: bool = False
-    brevo_api_key: str = ""
-    resend_api_key: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

@@ -25,10 +25,6 @@ services:
         value: https://nityamed-web.onrender.com,http://localhost:8081,http://localhost:8082
       - key: REQUIRE_EMAIL_VERIFICATION
         value: "false"
-      - key: BREVO_API_KEY
-        sync: false # Optional free HTTPS email API (300/day, works on Render free tier)
-      - key: RESEND_API_KEY
-        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

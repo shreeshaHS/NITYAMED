@@ -173,11 +173,7 @@ def get_anonymized_metrics(db: Session) -> AdminHealthMetricsResponse:
         or 0
     )
     total_notifications = db.scalar(select(func.count(Notification.id))) or 0
-    smtp_configured = bool(
-        settings.brevo_api_key
-        or settings.resend_api_key
-        or (settings.smtp_host and settings.smtp_user and settings.smtp_password)
-    )
+    smtp_configured = bool(settings.smtp_host and settings.smtp_user and settings.smtp_password)
     ml_ready = MODEL_PATH.exists()
 
     return AdminHealthMetricsResponse(
