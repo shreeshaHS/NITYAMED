@@ -1,9 +1,11 @@
-"""Email delivery service supporting IPv4 SMTP and safe non-blocking dev logging."""
+"""Email delivery service supporting HTTPS Gmail relay webhook, IPv4 SMTP, and dev logging."""
 
 from email.message import EmailMessage
 import logging
 import smtplib
 import socket
+
+import httpx
 
 from app.core.config import get_settings
 
@@ -21,9 +23,39 @@ def _resolve_ipv4_host(host: str, port: int) -> str:
     return host
 
 
+def _send_via_webhook(
+    webhook_url: str, secret: str, to_email: str, subject: str, body: str
+) -> tuple[bool, str]:
+    """Send email over HTTPS (port 443) via a private relay such as Google Apps Script."""
+    try:
+        resp = httpx.post(
+            webhook_url,
+            json={"secret": secret, "to": to_email, "subject": subject, "body": body},
+            follow_redirects=True,
+            timeout=12.0,
+        )
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+            if isinstance(data, dict) and data.get("ok") is False:
+                err = str(data.get("error") or "Webhook rejected email request")
+                return False, f"Email webhook error: {err}"
+        except ValueError:
+            pass
+        return True, f"Email delivered via HTTPS webhook to {to_email}."
+    except Exception as exc:
+        logger.warning("Email webhook failed to %s: %s", to_email, exc)
+        return False, f"Email webhook error: {exc}"
+
+
 def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, str]:
-    """Send a plain-text email via SMTP if configured without raising transport errors."""
+    """Send a plain-text email via HTTPS webhook or SMTP without raising transport errors."""
     settings = get_settings()
+    if settings.email_webhook_url:
+        return _send_via_webhook(
+            settings.email_webhook_url, settings.email_webhook_secret, to_email, subject, body
+        )
+
     if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
         logger.info("Dev email to %s | Subject: %s | Body: %s", to_email, subject, body)
         return False, "SMTP is not configured; logged in local dev mode."
@@ -53,7 +85,7 @@ def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, s
 
 
 def send_email(to_email: str, subject: str, body: str) -> bool:
-    """Send an email via SMTP and return whether delivery succeeded."""
+    """Send an email and return whether external delivery succeeded."""
     sent, _ = send_email_detailed(to_email, subject, body)
     return sent
 

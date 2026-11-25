@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     external_med_timeout_sec: float = 5.0
 
     require_email_verification: bool = False
+    email_webhook_url: str = ""
+    email_webhook_secret: str = ""
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_user: str = ""

@@ -1,5 +1,6 @@
 """Tests for Phase 1 authentication, token rotation, profile, and role boundaries."""
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -268,3 +269,47 @@ def test_forgot_and_reset_password_revokes_old_sessions(client: TestClient) -> N
         ).status_code
         == 200
     )
+
+
+def test_email_webhook_delivery_and_safe_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+    from app.core.config import get_settings
+    from app.modules.auth.email_service import send_email_detailed
+
+    monkeypatch.setenv("EMAIL_WEBHOOK_URL", "https://script.google.com/macros/s/demo/exec")
+    monkeypatch.setenv("EMAIL_WEBHOOK_SECRET", "topsecret")
+    get_settings.cache_clear()
+
+    captured: dict = {}
+
+    class _FakeResp:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"ok": True}
+
+    def _fake_post(url: str, **kwargs):
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        captured["follow_redirects"] = kwargs.get("follow_redirects")
+        return _FakeResp()
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+    sent, detail = send_email_detailed("patient@example.com", "Test Subject", "Hello Body")
+    assert sent is True
+    assert "HTTPS webhook" in detail
+    assert captured["follow_redirects"] is True
+    assert captured["json"]["secret"] == "topsecret"
+    assert captured["json"]["to"] == "patient@example.com"
+
+    def _boom(*args, **kwargs):
+        raise OSError("simulated network failure")
+
+    monkeypatch.setattr(httpx, "post", _boom)
+    sent_err, detail_err = send_email_detailed("patient@example.com", "Test", "Body")
+    assert sent_err is False
+    assert "simulated network failure" in detail_err
+    get_settings.cache_clear()
