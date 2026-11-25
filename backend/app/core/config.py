@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     rxnorm_base_url: str = "https://rxnav.nlm.nih.gov/REST"
     external_med_timeout_sec: float = 5.0
 
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    stt_api_url: str = ""
+    stt_api_key: str = ""
+    hf_token: str = ""
+    hf_llm_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    hf_stt_model: str = "openai/whisper-large-v3-turbo"
+    hf_space_url: str = ""
+
     require_email_verification: bool = True
     email_webhook_url: str = ""
     email_webhook_secret: str = ""

@@ -853,6 +853,437 @@ def build_multilingual_dataset() -> list[UtteranceSample]:
             "kal mausam kaisa rahega batao",
             "cricket match ka score kya hua",
         ]),
+
+        # ================= REAL-WORLD EXPANSION: check_stock =================
+        ("stk_rw_en_1", "check_stock", "en", [
+            "how many dolo tablets are left",
+            "dolo 650 stock balance check",
+            "check remaining count of metformin",
+        ]),
+        ("stk_rw_en_2", "check_stock", "en", [
+            "do i have enough pan d capsules left",
+            "is there any paracetamol remaining in my stock",
+        ]),
+        ("stk_rw_en_3", "check_stock", "en", [
+            "check stock of my blood pressure tablets",
+            "how full is my syrup bottle",
+        ]),
+        ("stk_rw_kn_1", "check_stock", "kn", [
+            "ಡೋಲೋ ಮಾತ್ರೆ ಇನ್ನು ಎಷ್ಟಿದೆ",
+            "ಮೆಟ್ಫಾರ್ಮಿನ್ ಎಷ್ಟು ಮಾತ್ರೆ ಉಳಿದಿದೆ",
+        ]),
+        ("stk_rw_kn_2", "check_stock", "kn", [
+            "ನನ್ನಲ್ಲಿ ಇರೋ ಸ್ಟಾಕ್ ಲೆಕ್ಕ ಹೇಳಿ",
+            "ಮನೆಯಲ್ಲಿ ಎಷ್ಟು ಗುಳಿಗೆ ಬಾಕಿ ಇದೆ",
+        ]),
+        ("stk_rw_kn_3", "check_stock", "kn", [
+            "ಪ್ಯಾನ್ ಡಿ ಕ್ಯಾಪ್ಸುಲ್ ಎಷ್ಟು ಉಳಿದಿದೆ",
+            "ಕ್ರೋಸಿನ್ ಸ್ಟಾಕ್ ಬ್ಯಾಲೆನ್ಸ್ ತೋರಿಸಿ",
+        ]),
+        ("stk_rw_knr_1", "check_stock", "kn_rom", [
+            "dolo 650 innu eshtu tablet ide",
+            "metformin balance eshtu ulidide",
+        ]),
+        ("stk_rw_knr_2", "check_stock", "kn_rom", [
+            "maneli eshtu goli ulidide heli",
+            "syrup bottle alli eshtu ml stock ide",
+        ]),
+        ("stk_rw_hi_1", "check_stock", "hi", [
+            "डोलो की कितनी गोलियां बची हैं",
+            "मेटफॉर्मिन का कितना स्टॉक बचा है",
+        ]),
+        ("stk_rw_hi_2", "check_stock", "hi", [
+            "मेरे पास अभी कितनी दवा बाकी है",
+            "सिरप की बोतल में कितनी दवा बची है",
+        ]),
+        ("stk_rw_hi_3", "check_stock", "hi", [
+            "पैन डी कैप्सूल का स्टॉक बताओ",
+            "घर में कितनी टैबलेट बची हैं गिन के बताओ",
+        ]),
+        ("stk_rw_hir_1", "check_stock", "hi_rom", [
+            "dolo ki kitni goli bachi hai",
+            "pan d capsules ka kitna balance hai",
+        ]),
+        ("stk_rw_hir_2", "check_stock", "hi_rom", [
+            "abhi mere paas kitni medicine bachi h",
+            "syrup kitna ml bacha hua hai",
+        ]),
+        ("stk_rw_cs_1", "check_stock", "code_switch", [
+            "dolo 650 kitni left hain stock mein",
+            "metformin tablet balance eshtu ide",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: today_schedule =================
+        ("tod_rw_en_1", "today_schedule", "en", [
+            "what do i take tonight before sleep",
+            "show my morning and evening tablets for today",
+        ]),
+        ("tod_rw_en_2", "today_schedule", "en", [
+            "read out today's medication routine",
+            "any pills scheduled for this afternoon",
+        ]),
+        ("tod_rw_en_3", "today_schedule", "en", [
+            "what medicines are on my schedule right now",
+            "open today timetable",
+        ]),
+        ("tod_rw_kn_1", "today_schedule", "kn", [
+            "ಇಂದು ಬೆಳಗ್ಗೆ ಮತ್ತು ರಾತ್ರಿ ಯಾವ ಔಷಧಿ ಇದೆ",
+            "ಇವತ್ತು ಸಂಜೆ ಯಾವ ಮಾತ್ರೆ ತೆಗೆದುಕೊಳ್ಳಬೇಕು",
+        ]),
+        ("tod_rw_kn_2", "today_schedule", "kn", [
+            "ನನ್ನ ಇಂದಿನ ಔಷಧಿ ವೇಳಾಪಟ್ಟಿ ಓದಿ ಹೇಳಿ",
+            "ಇಂದು ಮಧ್ಯಾಹ್ನ ಯಾವ ಗುಳಿಗೆ ಇದೆ",
+        ]),
+        ("tod_rw_knr_1", "today_schedule", "kn_rom", [
+            "ivattu ratri yav tablet togobeku",
+            "today afternoon yava medicine ide",
+        ]),
+        ("tod_rw_knr_2", "today_schedule", "kn_rom", [
+            "nanna daily tablet list helu",
+            "ivattu beligge yava matre ide",
+        ]),
+        ("tod_rw_hi_1", "today_schedule", "hi", [
+            "आज रात सोने से पहले कौन सी गोली लेनी है",
+            "आज दोपहर में कौन सी दवाई खानी है",
+        ]),
+        ("tod_rw_hi_2", "today_schedule", "hi", [
+            "मेरा आज का पूरा दवाई प्लान बताइए",
+            "आज शाम की दवाइयों की लिस्ट पढ़कर सुनाओ",
+        ]),
+        ("tod_rw_hir_1", "today_schedule", "hi_rom", [
+            "aaj raat ko kaun si tablet leni hai",
+            "aaj dopahar mein kya dawai hai",
+        ]),
+        ("tod_rw_hir_2", "today_schedule", "hi_rom", [
+            "aaj ka poora medication plan batao",
+            "subah aur raat ki kaunsi goli hai aaj",
+        ]),
+        ("tod_rw_cs_1", "today_schedule", "code_switch", [
+            "today morning aur night ki medicine list dikhao",
+            "ivattu night yava pills tagobeku",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: next_dose =================
+        ("nxt_rw_en_1", "next_dose", "en", [
+            "what is my upcoming pill reminder",
+            "when do i need to take dolo next",
+        ]),
+        ("nxt_rw_en_2", "next_dose", "en", [
+            "how long until my next tablet",
+            "tell me the time of my next dose",
+        ]),
+        ("nxt_rw_kn_1", "next_dose", "kn", [
+            "ನನ್ನ ಮುಂದಿನ ಡೋಲೋ ಮಾತ್ರೆ ಯಾವಾಗ ಇದೆ",
+            "ಮುಂದಿನ ಡೋಸ್ ಇನ್ನು ಎಷ್ಟು ಹೊತ್ತಿಗೆ ಇದೆ",
+        ]),
+        ("nxt_rw_kn_2", "next_dose", "kn", [
+            "ಯಾವ ಸಮಯಕ್ಕೆ ಮುಂದಿನ ಗುಳಿಗೆ ತೆಗೆದುಕೊಳ್ಳಬೇಕು",
+            "ಮುಂದಿನ ಔಷಧಿ ಸಮಯವನ್ನು ತಿಳಿಸಿ",
+        ]),
+        ("nxt_rw_knr_1", "next_dose", "kn_rom", [
+            "mundina dolo tablet yavaga togobeku",
+            "innu eshtu hottige next dose ide",
+        ]),
+        ("nxt_rw_hi_1", "next_dose", "hi", [
+            "मेरी अगली डोलो गोली कितने बजे है",
+            "अगली खुराक में कितना समय बाकी है",
+        ]),
+        ("nxt_rw_hi_2", "next_dose", "hi", [
+            "अगला रिमाइंडर कितने बजे का लगा है",
+            "मुझे अगली बार दवाई कब खानी होगी",
+        ]),
+        ("nxt_rw_hir_1", "next_dose", "hi_rom", [
+            "agli dolo tablet kitne baje leni hai",
+            "next dose mein kitna time bacha hai",
+        ]),
+        ("nxt_rw_cs_1", "next_dose", "code_switch", [
+            "mera next dose dolo ka kab hai",
+            "mundina dose time eshtu baje ide",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: medicine_info =================
+        ("inf_rw_en_1", "medicine_info", "en", [
+            "tell me about dolo 650 tablet",
+            "what are the uses of metformin",
+        ]),
+        ("inf_rw_en_2", "medicine_info", "en", [
+            "does pan d have side effects",
+            "precautions for taking paracetamol",
+        ]),
+        ("inf_rw_kn_1", "medicine_info", "kn", [
+            "ಡೋಲೋ ಮಾತ್ರೆಯ ಉಪಯೋಗ ಏನು",
+            "ಪ್ಯಾನ್ ಡಿ ಕ್ಯಾಪ್ಸುಲ್ ಅಡ್ಡಪರಿಣಾಮಗಳು ಏನು",
+        ]),
+        ("inf_rw_kn_2", "medicine_info", "kn", [
+            "ಮೆಟ್ಫಾರ್ಮಿನ್ ಔಷಧಿ ಬಗ್ಗೆ ವಿವರಿಸಿ",
+            "ಈ ಔಷಧಿ ತೆಗೆದುಕೊಳ್ಳುವ ಮುನ್ನ ಏನು ಎಚ್ಚರಿಕೆ ವಹಿಸಬೇಕು",
+        ]),
+        ("inf_rw_knr_1", "medicine_info", "kn_rom", [
+            "dolo 650 uses mattu side effects heli",
+            "metformin yavudakke kodtare heli",
+        ]),
+        ("inf_rw_hi_1", "medicine_info", "hi", [
+            "डोलो 650 टैबलेट किस काम आती है",
+            "मेटफॉर्मिन के साइड इफेक्ट और सावधानियां बताइए",
+        ]),
+        ("inf_rw_hi_2", "medicine_info", "hi", [
+            "पैन डी कैप्सूल के बारे में पूरी जानकारी दें",
+            "यह दवा लेने से क्या नुकसान हो सकता है",
+        ]),
+        ("inf_rw_hir_1", "medicine_info", "hi_rom", [
+            "dolo 650 kis kaam aati hai aur side effects kya hain",
+            "metformin ki precautions bataiye",
+        ]),
+        ("inf_rw_cs_1", "medicine_info", "code_switch", [
+            "pan d ke side effects aur uses batao",
+            "dolo tablet bagge verified info torisi",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: adherence_status =================
+        ("adh_rw_en_1", "adherence_status", "en", [
+            "did i take dolo this morning",
+            "have i confirmed my afternoon pill yet",
+        ]),
+        ("adh_rw_en_2", "adherence_status", "en", [
+            "was my breakfast dose taken or skipped",
+            "how many doses did i confirm today",
+        ]),
+        ("adh_rw_kn_1", "adherence_status", "kn", [
+            "ಇಂದು ಬೆಳಗ್ಗೆ ನಾನು ಡೋಲೋ ತೆಗೆದುಕೊಂಡೆನಾ",
+            "ನನ್ನ ಇಂದಿನ ಡೋಸ್ ಕನ್ಫರ್ಮ್ ಆಗಿದೆಯಾ ನೋಡಿ",
+        ]),
+        ("adh_rw_kn_2", "adherence_status", "kn", [
+            "ರಾತ್ರಿಯ ಔಷಧಿ ತೆಗೆದುಕೊಂಡಿದ್ದೇನಾ ಅಥವಾ ಬಾಕಿ ಇದೆಯಾ",
+            "ಇವತ್ತು ಯಾವುದಾದರೂ ಡೋಸ್ ಮಿಸ್ ಆಗಿದೆಯಾ",
+        ]),
+        ("adh_rw_knr_1", "adherence_status", "kn_rom", [
+            "naanu beligge dolo togondidna",
+            "ivattu dose confirm agidya illa skip agidya",
+        ]),
+        ("adh_rw_hi_1", "adherence_status", "hi", [
+            "क्या मैंने आज सुबह डोलो खा ली है",
+            "आज की कितनी डोज़ कन्फर्म हो चुकी हैं",
+        ]),
+        ("adh_rw_hi_2", "adherence_status", "hi", [
+            "मेरी दोपहर वाली दवाई ली गई या छूटी है",
+            "क्या आज मैंने कोई दवाई मिस की है",
+        ]),
+        ("adh_rw_hir_1", "adherence_status", "hi_rom", [
+            "kya maine subah dolo liya tha",
+            "aaj ki kitni dose mark ho gayi hain",
+        ]),
+        ("adh_rw_cs_1", "adherence_status", "code_switch", [
+            "morning dolo dose confirm agidya check maadi",
+            "did i confirm sham ki tablet today",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: refill_check =================
+        ("ref_rw_en_1", "refill_check", "en", [
+            "when will my dolo strip finish",
+            "do i need to buy more metformin soon",
+        ]),
+        ("ref_rw_en_2", "refill_check", "en", [
+            "check refill prediction for my medicines",
+            "when does my medicine run empty",
+        ]),
+        ("ref_rw_kn_1", "refill_check", "kn", [
+            "ಡೋಲೋ ಮಾತ್ರೆ ಯಾವಾಗ ಮುಗಿಯುತ್ತದೆ",
+            "ಯಾವ ಔಷಧಿಯನ್ನು ಬೇಗ ರೀಫಿಲ್ ಮಾಡಿಸಬೇಕು",
+        ]),
+        ("ref_rw_kn_2", "refill_check", "kn", [
+            "ಮೆಟ್ಫಾರ್ಮಿನ್ ಇನ್ನು ಎಷ್ಟು ದಿನ ಸಾಕಾಗುತ್ತದೆ",
+            "ಹೊಸ ಸ್ಟ್ರಿಪ್ ತರಬೇಕಾದ ದಿನಾಂಕ ಯಾವಾಗ",
+        ]),
+        ("ref_rw_knr_1", "refill_check", "kn_rom", [
+            "dolo strip yavaga mugiyutte",
+            "yava medicine bega refill madbeku",
+        ]),
+        ("ref_rw_hi_1", "refill_check", "hi", [
+            "डोलो की पट्टी कब खत्म होगी",
+            "कौन सी दवाई जल्दी रीफिल करवानी है",
+        ]),
+        ("ref_rw_hi_2", "refill_check", "hi", [
+            "मेटफॉर्मिन कितने दिन और चलेगी",
+            "दवाई खत्म होने की तारीख क्या है",
+        ]),
+        ("ref_rw_hir_1", "refill_check", "hi_rom", [
+            "dolo kab tak chalegi aur refill kab karna hai",
+            "kaunsi dawai jaldi khatam hone wali hai",
+        ]),
+        ("ref_rw_cs_1", "refill_check", "code_switch", [
+            "metformin refill alert kab hai check maadi",
+            "dolo kitne days aur last karegi",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: confirm_dose =================
+        ("cnf_rw_en_1", "confirm_dose", "en", [
+            "i took my dolo tablet just now",
+            "mark dolo morning dose as taken",
+        ]),
+        ("cnf_rw_en_2", "confirm_dose", "en", [
+            "just had my metformin pill confirm it",
+            "log two tablets of paracetamol as taken",
+        ]),
+        ("cnf_rw_kn_1", "confirm_dose", "kn", [
+            "ನಾನು ಈಗಷ್ಟೇ ಡೋಲೋ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡೆ",
+            "ಬೆಳಗಿನ ಮೆಟ್ಫಾರ್ಮಿನ್ ಡೋಸ್ ತೆಗೆದುಕೊಂಡಿದ್ದೇನೆ ಮಾರ್ಕ್ ಮಾಡಿ",
+        ]),
+        ("cnf_rw_kn_2", "confirm_dose", "kn", [
+            "ರಾತ್ರಿ ಗುಳಿಗೆ ತಿಂದೆ ಕನ್ಫರ್ಮ್ ಮಾಡಿ",
+            "ನಾನು ಔಷಧಿ ಕುಡಿದಿದ್ದೇನೆ ಸೇವ್ ಮಾಡಿ",
+        ]),
+        ("cnf_rw_knr_1", "confirm_dose", "kn_rom", [
+            "dolo tablet togonde confirm maadi",
+            "metformin morning goli togonde mark maadi",
+        ]),
+        ("cnf_rw_hi_1", "confirm_dose", "hi", [
+            "मैंने अभी डोलो की गोली खा ली है",
+            "मेरी सुबह की मेटफॉर्मिन डोज़ कन्फर्म कर दो",
+        ]),
+        ("cnf_rw_hi_2", "confirm_dose", "hi", [
+            "दवाई पी ली है आज की मार्क कर दीजिए",
+            "रात की गोली ले ली है अपडेट कर दो",
+        ]),
+        ("cnf_rw_hir_1", "confirm_dose", "hi_rom", [
+            "maine abhi dolo kha li hai confirm karo",
+            "morning metformin le li mark taken kar do",
+        ]),
+        ("cnf_rw_cs_1", "confirm_dose", "code_switch", [
+            "dolo morning tablet togonde mark taken karo",
+            "just took pan d capsule confirm maadi",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: update_stock_purchase =================
+        ("pur_rw_en_1", "update_stock_purchase", "en", [
+            "i bought two strips of dolo add to stock",
+            "purchased one new pack of metformin",
+        ]),
+        ("pur_rw_en_2", "update_stock_purchase", "en", [
+            "add twenty tablets of paracetamol to inventory",
+            "restocked a fresh strip from pharmacy",
+        ]),
+        ("pur_rw_kn_1", "update_stock_purchase", "kn", [
+            "ಎರಡು ಸ್ಟ್ರಿಪ್ ಡೋಲೋ ಖರೀದಿಸಿದ್ದೇನೆ ಸ್ಟಾಕ್ ಸೇರಿಸಿ",
+            "ಒಂದು ಹೊಸ ಪ್ಯಾಕ್ ಮೆಟ್ಫಾರ್ಮಿನ್ ತಂದಿದ್ದೇನೆ ಅಪ್ಡೇಟ್ ಮಾಡಿ",
+        ]),
+        ("pur_rw_kn_2", "update_stock_purchase", "kn", [
+            "ಹತ್ತು ಗುಳಿಗೆ ಅಂಗಡಿಯಿಂದ ತಂದೆ ಸ್ಟಾಕ್ ಹಾಕಿ",
+            "ಹೊಸ ಸಿರಪ್ ಬಾಟಲ್ ಸ್ಟಾಕ್‌ಗೆ ಸೇರಿಸಿ",
+        ]),
+        ("pur_rw_knr_1", "update_stock_purchase", "kn_rom", [
+            "eradu strip dolo tandini stock add maadi",
+            "ondu hosa metformin pack buy madide serisi",
+        ]),
+        ("pur_rw_hi_1", "update_stock_purchase", "hi", [
+            "मैंने डोलो के दो पत्ते खरीदे हैं स्टॉक में जोड़ो",
+            "मेटफॉर्मिन की एक नई स्ट्रिप लाया हूं अपडेट करो",
+        ]),
+        ("pur_rw_hi_2", "update_stock_purchase", "hi", [
+            "फार्मेसी से बीस गोलियां खरीदी हैं इन्वेंटरी बढ़ाओ",
+            "नई दवा का पैक स्टॉक में डाल दो",
+        ]),
+        ("pur_rw_hir_1", "update_stock_purchase", "hi_rom", [
+            "maine dolo ki do patti kharidi hai stock update karo",
+            "ek strip metformin laya hoon add karo",
+        ]),
+        ("pur_rw_cs_1", "update_stock_purchase", "code_switch", [
+            "bought 2 strips of dolo stock update maadi",
+            "ek naya pack pan d kharida inventory mein add karo",
+        ]),
+
+        # ================= REAL-WORLD EXPANSION: out_of_scope =================
+        ("oos_rw_en_1", "out_of_scope", "en", [
+            "set an alarm for five pm for office meeting",
+            "what is the capital of karnataka",
+        ]),
+        ("oos_rw_en_2", "out_of_scope", "en", [
+            "can you send an email to my friend",
+            "translate good morning to french",
+        ]),
+        ("oos_rw_kn_1", "out_of_scope", "kn", [
+            "ಬೆಂಗಳೂರು ಟ್ರಾಫಿಕ್ ಹೇಗಿದೆ ಹೇಳಿ",
+            "ಒಂದು ಒಳ್ಳೆಯ ಸಿನಿಮಾ ಹೆಸರು ಹೇಳಿ",
+        ]),
+        ("oos_rw_knr_1", "out_of_scope", "kn_rom", [
+            "bengaluru weather mattu traffic hege ide",
+            "ondu olle kannada movie suggest maadi",
+        ]),
+        ("oos_rw_hi_1", "out_of_scope", "hi", [
+            "दिल्ली का मौसम कैसा है आज",
+            "मुझे एक अच्छी फिल्म का नाम बताओ",
+        ]),
+        ("oos_rw_hir_1", "out_of_scope", "hi_rom", [
+            "aaj ka news headline sunao",
+            "mere liye pizza order kar do",
+        ]),
+
+        # ================= REAL-WORLD BALANCING: adherence_status vs confirm_dose =================
+        ("adh_rw_q_en_1", "adherence_status", "en", [
+            "check whether i already took my morning dose",
+            "did i confirm today's pill already or not",
+        ]),
+        ("adh_rw_q_kn_1", "adherence_status", "kn", [
+            "ನಾನು ಬೆಳಗ್ಗೆ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡಿದ್ದೇನಾ ಇಲ್ಲವಾ ಹೇಳಿ",
+            "ಇವತ್ತಿನ ಟ್ಯಾಬ್ಲೆಟ್ ತಗೊಂಡಿದೀನಾ ಚೆಕ್ ಮಾಡಿ",
+        ]),
+        ("adh_rw_q_hi_1", "adherence_status", "hi", [
+            "क्या आज की गोली खा ली गई है या बाकी है",
+            "चेक करके बताओ मैंने सुबह दवाई ली थी क्या",
+        ]),
+        ("cnf_rw_imp_kn_1", "confirm_dose", "kn", [
+            "ಬೆಳಗಿನ ಡೋಸ್ ತೆಗೆದುಕೊಂಡಿದ್ದೇನೆ ದಯವಿಟ್ಟು ಸೇವ್ ಮಾಡಿ",
+            "ಈಗ ಮಾತ್ರೆ ನುಂಗಿದ್ದೇನೆ ಕನ್ಫರ್ಮ್ ಮಾಡಿ",
+        ]),
+        ("cnf_rw_imp_hi_1", "confirm_dose", "hi", [
+            "मैंने दवाई निगल ली है अभी कन्फर्म कीजिए",
+            "सुबह की टैबलेट खाई अभी रिकॉर्ड कर दो",
+        ]),
+
+        # ================= REAL-WORLD BALANCING: out_of_scope (EN / KN / HI) =================
+        ("oos_bal_en_1", "out_of_scope", "en", [
+            "who is the prime minister of india",
+            "tell me the latest sports news",
+        ]),
+        ("oos_bal_en_2", "out_of_scope", "en", [
+            "how to cook masala dosa at home",
+            "open youtube and play relaxing music",
+        ]),
+        ("oos_bal_en_3", "out_of_scope", "en", [
+            "what is the stock price of infosys today",
+            "book a train ticket from bengaluru to mysuru",
+        ]),
+        ("oos_bal_kn_1", "out_of_scope", "kn", [
+            "ಮೈಸೂರು ದಸರಾ ಯಾವಾಗ ಶುರುವಾಗುತ್ತದೆ",
+            "ನನಗೆ ಒಳ್ಳೆಯ ಕಥೆ ಹೇಳಿ",
+        ]),
+        ("oos_bal_kn_2", "out_of_scope", "kn", [
+            "ಬೆಂಗಳೂರಿನಿಂದ ಮಂಗಳೂರಿಗೆ ಬಸ್ ಟಿಕೆಟ್ ಬುಕ್ ಮಾಡಿ",
+            "ಇಂದಿನ ಚಿನ್ನದ ಬೆಲೆ ಎಷ್ಟಿದೆ",
+        ]),
+        ("oos_bal_kn_3", "out_of_scope", "kn", [
+            "ಕಾಫಿ ಮಾಡುವ ವಿಧಾನ ಹೇಳಿ",
+            "ಇಂದು ಪೆಟ್ರೋಲ್ ಬೆಲೆ ಎಷ್ಟು",
+        ]),
+        ("oos_bal_knr_1", "out_of_scope", "kn_rom", [
+            "mysuru road traffic hege ide ivattu",
+            "olle hotel hesaru heli dinner ge",
+        ]),
+        ("oos_bal_hi_1", "out_of_scope", "hi", [
+            "भारत के प्रधानमंत्री कौन हैं",
+            "आज सोने का भाव क्या चल रहा है",
+        ]),
+        ("oos_bal_hi_2", "out_of_scope", "hi", [
+            "चाय बनाने की रेसिपी बताओ",
+            "मुंबई के लिए ट्रेन टिकट बुक कर दो",
+        ]),
+        ("oos_bal_hi_3", "out_of_scope", "hi", [
+            "आज की ताजा खबरें पढ़कर सुनाओ",
+            "मुझे एक चुटकुला सुनाओ",
+        ]),
+        ("oos_bal_hir_1", "out_of_scope", "hi_rom", [
+            "train ticket book kar do delhi ke liye",
+            "aaj petrol ka rate kya hai batao",
+        ]),
     ]
 
     samples: list[UtteranceSample] = []

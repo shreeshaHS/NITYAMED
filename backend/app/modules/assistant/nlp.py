@@ -15,19 +15,41 @@ OOS_CONFIDENCE_THRESHOLD = 0.25
 _SPELLING_FIXES: dict[str, str] = {
     "tablt": "tablet",
     "tablts": "tablets",
+    "tab": "tablet",
+    "tabs": "tablets",
+    "capsul": "capsule",
+    "cap": "capsule",
+    "caps": "capsules",
+    "syurp": "syrup",
+    "med": "medicine",
+    "meds": "medicines",
     "medicin": "medicine",
     "medicins": "medicines",
     "medcine": "medicine",
     "mrng": "morning",
     "mrning": "morning",
     "evng": "evening",
+    "aftrnoon": "afternoon",
+    "nit": "night",
+    "nite": "night",
     "inventry": "inventory",
+    "invntry": "inventory",
     "skedule": "schedule",
+    "shedule": "schedule",
+    "remndr": "reminder",
     "refil": "refill",
     "stok": "stock",
+    "stck": "stock",
+    "remng": "remaining",
+    "bttl": "bottle",
+    "strp": "strip",
     "purchsed": "purchased",
+    "bot": "bought",
     "updat": "update",
+    "confrm": "confirm",
+    "cnfrm": "confirm",
     "tday": "today",
+    "2day": "today",
     "wen": "when",
     "shud": "should",
     "wich": "which",
@@ -35,31 +57,110 @@ _SPELLING_FIXES: dict[str, str] = {
     "hav": "have",
     "hv": "have",
     "takn": "taken",
+    "tkn": "taken",
 }
 
-_NUMBER_WORDS: dict[str, int] = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "ten": 10,
-    "fifteen": 15,
-    "twenty": 20,
-    "ek": 1,
-    "do": 2,
-    "teen": 3,
-    "das": 10,
-    "ondu": 1,
-    "eradu": 2,
-    "mooru": 3,
-    "hattu": 10,
-    "एक": 1,
-    "दो": 2,
-    "दस": 10,
-    "ಒಂದು": 1,
-    "ಎರಡು": 2,
-    "ಹತ್ತು": 10,
+_NUMBER_WORDS: dict[str, Decimal] = {
+    "half": Decimal("0.5"),
+    "one": Decimal("1"),
+    "two": Decimal("2"),
+    "three": Decimal("3"),
+    "four": Decimal("4"),
+    "five": Decimal("5"),
+    "six": Decimal("6"),
+    "eight": Decimal("8"),
+    "ten": Decimal("10"),
+    "fifteen": Decimal("15"),
+    "twenty": Decimal("20"),
+    "thirty": Decimal("30"),
+    "aadha": Decimal("0.5"),
+    "ardha": Decimal("0.5"),
+    "ek": Decimal("1"),
+    "do": Decimal("2"),
+    "teen": Decimal("3"),
+    "char": Decimal("4"),
+    "paanch": Decimal("5"),
+    "das": Decimal("10"),
+    "ondu": Decimal("1"),
+    "eradu": Decimal("2"),
+    "mooru": Decimal("3"),
+    "naalku": Decimal("4"),
+    "aidu": Decimal("5"),
+    "hattu": Decimal("10"),
+    "एक": Decimal("1"),
+    "दो": Decimal("2"),
+    "तीन": Decimal("3"),
+    "दस": Decimal("10"),
+    "आधा": Decimal("0.5"),
+    "ಒಂದು": Decimal("1"),
+    "ಎರಡು": Decimal("2"),
+    "ಮೂರು": Decimal("3"),
+    "ಹತ್ತು": Decimal("10"),
+    "ಅರ್ಧ": Decimal("0.5"),
+}
+
+_AFFIRMATIVE_CONFIRMATIONS = {
+    "yes",
+    "yeah",
+    "yep",
+    "yup",
+    "confirm",
+    "confirmed",
+    "ok",
+    "okay",
+    "sure",
+    "approve",
+    "yes confirm",
+    "confirm it",
+    "please confirm",
+    "go ahead",
+    "haan",
+    "han",
+    "ha",
+    "theek hai",
+    "sahi hai",
+    "haudu",
+    "houdu",
+    "sari",
+    "ಹೌದು",
+    "ಸರಿ",
+    "ಕನ್ಫರ್ಮ್",
+    "ಕನ್ಫರ್ಮ್ ಮಾಡಿ",
+    "हाँ",
+    "हां",
+    "जी",
+    "ठीक है",
+    "कन्फर्म",
+    "कन्फर्म करो",
+}
+
+_NEGATIVE_CONFIRMATIONS = {
+    "no",
+    "nope",
+    "nah",
+    "cancel",
+    "stop",
+    "abort",
+    "cancel it",
+    "dont",
+    "don't",
+    "no thanks",
+    "nahi",
+    "nahin",
+    "mat karo",
+    "cancel karo",
+    "beda",
+    "byada",
+    "cancel maadi",
+    "ಬೇಡ",
+    "ಬ್ಯಾಡ",
+    "ರದ್ದು",
+    "ರದ್ದು ಮಾಡಿ",
+    "ನಿಲ್ಲಿಸಿ",
+    "नहीं",
+    "मत करो",
+    "रद्द करो",
+    "कैंसल",
 }
 
 _CLINICAL_UNSAFE_PATTERNS: tuple[str, ...] = (
@@ -83,11 +184,24 @@ def detect_language(text: str, fallback: str = "en") -> str:
 
 
 def normalize_text(text: str) -> str:
-    """Clean whitespace and normalize common ASR/spelling errors without touching Unicode scripts."""
+    """Clean whitespace, strip gentle voice fillers, and fix common ASR/typos safely."""
     cleaned = re.sub(r"\s+", " ", text.strip().lower())
+    cleaned = re.sub(r"^(?:hey|ok|okay|hi|hello)\s+(?:nityamed|nitya med|assistant)[,\s]*", "", cleaned)
     tokens = cleaned.split(" ")
-    normalized_tokens = [_SPELLING_FIXES.get(tok.strip("?.!,"), tok.strip("?.!,")) for tok in tokens]
+    normalized_tokens = [
+        _SPELLING_FIXES.get(tok.strip("?.!,;:\"'()"), tok.strip("?.!,;:\"'()"))
+        for tok in tokens
+    ]
     return " ".join(t for t in normalized_tokens if t)
+
+
+def parse_voice_confirmation_reply(norm_text: str) -> bool | None:
+    """Detect hands-free yes/confirm or no/cancel utterances while a confirmation prompt is active."""
+    if norm_text in _AFFIRMATIVE_CONFIRMATIONS:
+        return True
+    if norm_text in _NEGATIVE_CONFIRMATIONS:
+        return False
+    return None
 
 
 def is_unsafe_clinical_query(norm_text: str) -> bool:
@@ -111,8 +225,11 @@ def classify_intent(norm_text: str) -> tuple[str, float, str]:
     if is_unsafe_clinical_query(norm_text):
         return "out_of_scope_clinical", 1.0, "safety_guard"
 
-    # Fast unambiguous rule shortcuts for critical follow-up / clear commands
-    if re.search(r"\b(weather|cricket|song|cab|joke|rain)\b", norm_text):
+    # Fast unambiguous rule shortcuts for clear non-medication queries
+    if re.search(
+        r"\b(weather|cricket|song|songs|music|cab|taxi|joke|rain|movie|news|recipe|pizza|biryani)\b",
+        norm_text,
+    ):
         return "out_of_scope", 0.99, "rule"
 
     model = load_intent_model()
@@ -150,7 +267,7 @@ def extract_quantity_and_unit(norm_text: str) -> tuple[Decimal | None, bool]:
 
     for word, val in _NUMBER_WORDS.items():
         if re.search(rf"(?:^|\s){re.escape(word)}(?:\s|$)", norm_text):
-            return Decimal(val), is_pack
+            return val, is_pack
 
     if is_pack:
         return Decimal("1"), True

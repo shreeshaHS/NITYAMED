@@ -11,57 +11,103 @@ from pathlib import Path
 import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import VotingClassifier
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.naive_bayes import ComplementNB
 from sklearn.pipeline import FeatureUnion, Pipeline
 from sklearn.svm import LinearSVC
 
+from app.modules.assistant.nlp import normalize_text
 from ml.dataset import UtteranceSample, build_multilingual_dataset
 
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
 MODEL_PATH = ARTIFACTS_DIR / "intent_classifier.joblib"
 REPORT_PATH = ARTIFACTS_DIR / "benchmark_report.json"
 OOS_CONFIDENCE_THRESHOLD = 0.25
+# Preserve Indic Unicode combining marks (Kannada/Devanagari matras) inside tokens.
+INDIC_TOKEN_PATTERN = r"[^\s?.!,;:\"'()\[\]{}]+"
+
+
+def _build_hybrid_features() -> FeatureUnion:
+    """Build combined Indic-safe word + character n-gram TF-IDF feature union."""
+    return FeatureUnion([
+        (
+            "word",
+            TfidfVectorizer(
+                ngram_range=(1, 3),
+                token_pattern=INDIC_TOKEN_PATTERN,
+                lowercase=True,
+                sublinear_tf=True,
+            ),
+        ),
+        (
+            "char",
+            TfidfVectorizer(
+                analyzer="char_wb",
+                ngram_range=(2, 6),
+                lowercase=True,
+                sublinear_tf=True,
+            ),
+        ),
+    ])
 
 
 def _build_candidate_pipelines() -> dict[str, Pipeline]:
-    """Construct candidate classification pipelines from lightweight baseline to hybrid."""
+    """Construct candidate classification pipelines from lightweight baseline to hybrid ensemble."""
     word_logreg = Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), lowercase=True, sublinear_tf=True)),
-        ("clf", LogisticRegression(max_iter=2000, C=4.0, class_weight="balanced")),
+        (
+            "tfidf",
+            TfidfVectorizer(
+                ngram_range=(1, 2),
+                token_pattern=INDIC_TOKEN_PATTERN,
+                lowercase=True,
+                sublinear_tf=True,
+            ),
+        ),
+        ("clf", LogisticRegression(max_iter=2500, C=4.0, class_weight="balanced")),
     ])
 
-    hybrid_features = FeatureUnion([
-        ("word", TfidfVectorizer(ngram_range=(1, 2), lowercase=True, sublinear_tf=True)),
-        ("char", TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), lowercase=True, sublinear_tf=True)),
-    ])
     hybrid_logreg = Pipeline([
-        ("features", hybrid_features),
-        ("clf", LogisticRegression(max_iter=2000, C=4.0, class_weight="balanced")),
+        ("features", _build_hybrid_features()),
+        ("clf", LogisticRegression(max_iter=2500, C=5.0, class_weight="balanced")),
     ])
 
-    hybrid_features_svm = FeatureUnion([
-        ("word", TfidfVectorizer(ngram_range=(1, 2), lowercase=True, sublinear_tf=True)),
-        ("char", TfidfVectorizer(analyzer="char_wb", ngram_range=(2, 5), lowercase=True, sublinear_tf=True)),
-    ])
     hybrid_svm = Pipeline([
-        ("features", hybrid_features_svm),
-        ("clf", CalibratedClassifierCV(LinearSVC(C=1.0, class_weight="balanced"), cv=3)),
+        ("features", _build_hybrid_features()),
+        ("clf", CalibratedClassifierCV(LinearSVC(C=1.2, class_weight="balanced"), cv=3)),
+    ])
+
+    hybrid_ensemble = Pipeline([
+        ("features", _build_hybrid_features()),
+        (
+            "clf",
+            VotingClassifier(
+                estimators=[
+                    ("lr", LogisticRegression(max_iter=2500, C=5.0, class_weight="balanced")),
+                    ("svm", CalibratedClassifierCV(LinearSVC(C=1.2, class_weight="balanced"), cv=3)),
+                    ("cnb", ComplementNB(alpha=0.3)),
+                ],
+                voting="soft",
+                weights=[2.0, 2.0, 1.0],
+            ),
+        ),
     ])
 
     return {
         "word_tfidf_logreg": word_logreg,
         "hybrid_tfidf_logreg": hybrid_logreg,
         "hybrid_tfidf_calibrated_svm": hybrid_svm,
+        "hybrid_tfidf_soft_ensemble": hybrid_ensemble,
     }
 
 
 def evaluate_models(samples: list[UtteranceSample] | None = None, n_splits: int = 5) -> dict:
     """Run leak-free StratifiedGroupKFold cross-validation across candidate models."""
     data = samples or build_multilingual_dataset()
-    texts = np.array([s.text for s in data])
+    texts = np.array([normalize_text(s.text) for s in data])
     labels = np.array([s.intent for s in data])
     groups = np.array([s.family_id for s in data])
     langs = np.array([s.lang_group for s in data])
@@ -139,12 +185,16 @@ def train_and_save_best(output_model_path: Path = MODEL_PATH, report_path: Path 
 
     best_name = max(
         report["models"].keys(),
-        key=lambda m: (report["models"][m]["macro_f1"], report["models"][m]["accuracy"]),
+        key=lambda m: (
+            round(report["models"][m]["macro_f1"] * 0.8 + report["models"][m]["oos_recall"] * 0.2, 4),
+            report["models"][m]["macro_f1"],
+            report["models"][m]["accuracy"],
+        ),
     )
     report["selected_model"] = best_name
 
     best_pipeline = _build_candidate_pipelines()[best_name]
-    texts = [s.text for s in samples]
+    texts = [normalize_text(s.text) for s in samples]
     labels = [s.intent for s in samples]
     best_pipeline.fit(texts, labels)
 

@@ -82,6 +82,12 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
       setPendingConfirm(res.requires_confirmation ? res : null);
       if (!customText) setQuery('');
       speakText(res.reply_text, res.language);
+      if (
+        !res.requires_confirmation &&
+        (res.intent === 'confirm_dose' || res.intent === 'update_stock_purchase')
+      ) {
+        await onDataChanged();
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Assistant requires internet connectivity.');
     } finally {

@@ -23,6 +23,7 @@ from app.modules.assistant.nlp import (
     extract_time_window,
     match_user_medicines,
     normalize_text,
+    parse_voice_confirmation_reply,
 )
 from app.modules.assistant.schemas import AssistantConfirmRequest, AssistantResponse
 from app.modules.auth.models import PatientProfile, User
@@ -186,8 +187,30 @@ def handle_text_query(
     detected_lang = detect_language(raw_text, fallback=pref_lang)
     norm_text = normalize_text(raw_text)
 
-    intent, confidence, source = classify_intent(norm_text)
     state = _get_or_create_dialogue_state(db, user.id)
+    now_utc = datetime.now(UTC)
+    if (
+        state.pending_action is not None
+        and state.confirmation_token is not None
+        and _as_utc(state.expires_at) > now_utc
+    ):
+        voice_decision = parse_voice_confirmation_reply(norm_text)
+        if voice_decision is not None:
+            ctx = dict(state.context_json or {})
+            ctx["last_language"] = detected_lang
+            state.context_json = ctx
+            resp = execute_confirmed_action(
+                db,
+                user,
+                AssistantConfirmRequest(
+                    confirmation_token=state.confirmation_token,
+                    approved=voice_decision,
+                ),
+            )
+            resp.transcript = transcript
+            return resp
+
+    intent, confidence, source = classify_intent(norm_text)
     llm = llm_adapter or BoundedLLMAdapter()
     tts = tts_adapter or TTSAdapter()
 
@@ -309,12 +332,20 @@ def handle_text_query(
         if window:
             daily = [d for d in daily if _time_bucket(d.scheduled_at.astimezone(tz).hour) == window]
         if not daily:
-            return _finalize("No doses were scheduled for that time window today.")
+            empty_msg = {
+                "kn": "ಇಂದು ಆ ಸಮಯಕ್ಕೆ ಯಾವುದೇ ಡೋಸ್ ನಿಗದಿಯಾಗಿರಲಿಲ್ಲ.",
+                "hi": "आज उस समय के लिए कोई डोज़ निर्धारित नहीं थी।",
+            }.get(detected_lang, "No doses were scheduled for that time window today.")
+            return _finalize(empty_msg)
         summary = "; ".join(
-            f"{d.display_name} at {d.scheduled_at.astimezone(tz).strftime('%H:%M')} is {d.status}"
+            f"{d.display_name} ({d.scheduled_at.astimezone(tz).strftime('%H:%M')}): {d.status}"
             for d in daily
         )
-        return _finalize("Today's dose status: " + summary + ".", med_id_context=daily[0].personal_med_id)
+        prefix = {
+            "kn": "ಇಂದಿನ ಡೋಸ್ ಸ್ಥಿತಿ: ",
+            "hi": "आज की डोज़ स्थिति: ",
+        }.get(detected_lang, "Today's dose status: ")
+        return _finalize(prefix + summary + ".", med_id_context=daily[0].personal_med_id)
 
     if intent == "refill_check":
         preds = get_refill_predictions(db, user)
@@ -322,38 +353,81 @@ def handle_text_query(
         if med is not None:
             preds = [p for p in preds if p.personal_med_id == med.id]
         if not preds:
-            return _finalize(err or "No refill prediction data available.")
+            no_refill_msg = err or {
+                "kn": "ರಿಫಿಲ್ ಅಂದಾಜು ಮಾಹಿತಿ ಸದ್ಯಕ್ಕೆ ಲಭ್ಯವಿಲ್ಲ.",
+                "hi": "रीफिल अनुमान की जानकारी अभी उपलब्ध नहीं है।",
+            }.get(detected_lang, "No refill prediction data available.")
+            return _finalize(no_refill_msg)
         lines = []
         for p in preds:
             if p.projected_depletion_date:
-                lines.append(
-                    f"{p.display_name}: ~{p.estimated_remaining_days} days left (runs out around {p.projected_depletion_date.isoformat()})"
-                )
+                dep_date = p.projected_depletion_date.isoformat()
+                if detected_lang == "kn":
+                    lines.append(
+                        f"{p.display_name}: ಇನ್ನೂ ~{p.estimated_remaining_days} ದಿನ ಉಳಿದಿದೆ ({dep_date} ರ ಸುಮಾರಿಗೆ ಖಾಲಿಯಾಗುತ್ತದೆ)"
+                    )
+                elif detected_lang == "hi":
+                    lines.append(
+                        f"{p.display_name}: लगभग ~{p.estimated_remaining_days} दिन बचे हैं ({dep_date} के आसपास खत्म होगी)"
+                    )
+                else:
+                    lines.append(
+                        f"{p.display_name}: ~{p.estimated_remaining_days} days left (runs out around {dep_date})"
+                    )
             else:
                 lines.append(f"{p.display_name}: {p.reason}")
-        return _finalize("Refill summary — " + "; ".join(lines), med_id_context=med.id if med else None)
+        refill_prefix = {
+            "kn": "ರಿಫಿಲ್ ಸಾರಾಂಶ — ",
+            "hi": "रीफिल सारांश — ",
+        }.get(detected_lang, "Refill summary — ")
+        return _finalize(refill_prefix + "; ".join(lines), med_id_context=med.id if med else None)
 
     if intent == "medicine_info":
         med, err = _resolve_target_medicine(norm_text, active_meds, state)
         if med is None:
-            return _finalize(err or "Please specify which medicine you want information about.", final_source="clarification")
+            clarify_med = err or {
+                "kn": "ದಯವಿಟ್ಟು ಯಾವ ಔಷಧಿಯ ಬಗ್ಗೆ ಮಾಹಿತಿ ಬೇಕು ಎಂಬುದನ್ನು ತಿಳಿಸಿ.",
+                "hi": "कृपया बताएं कि आपको किस दवाई की जानकारी चाहिए।",
+            }.get(detected_lang, "Please specify which medicine you want information about.")
+            return _finalize(clarify_med, final_source="clarification")
         if med.is_custom or med.catalogue_id is None:
-            return _finalize(
+            custom_msg = {
+                "kn": f"{med.display_name} ಕಸ್ಟಮ್ ಎಂಟ್ರಿಯಾಗಿರುವುದರಿಂದ ಪರಿಶೀಲಿತ ಶೈಕ್ಷಣಿಕ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
+                "hi": f"{med.display_name} एक कस्टम दवाई एंट्री है, इसलिए सत्यापित शैक्षिक जानकारी उपलब्ध नहीं है।",
+            }.get(
+                detected_lang,
                 f"{med.display_name} is a custom medicine entry, so verified educational reference details are unavailable.",
-                med_id_context=med.id,
             )
+            return _finalize(custom_msg, med_id_context=med.id)
         cat = db.get(MedicineCatalogue, med.catalogue_id)
         edu = _ensure_catalogue_education(db, cat) if cat else None
         if edu is None:
-            return _finalize(
+            unavail_msg = {
+                "kn": f"{med.display_name} ಗಾಗಿ ಪರಿಶೀಲಿತ ಮಾಹಿತಿ ಸದ್ಯಕ್ಕೆ ಲಭ್ಯವಿಲ್ಲ.",
+                "hi": f"{med.display_name} के लिए सत्यापित जानकारी अभी उपलब्ध नहीं है।",
+            }.get(
+                detected_lang,
                 f"Verified educational details for {med.display_name} are currently unavailable.",
-                med_id_context=med.id,
             )
-        return _finalize(
-            f"{med.display_name} ({edu.category}): {edu.common_uses} Common side effects: {edu.side_effects} "
-            f"Precautions: {edu.precautions} (Source: {edu.source_name}, verified {edu.verified_at.isoformat()}).",
-            med_id_context=med.id,
-        )
+            return _finalize(unavail_msg, med_id_context=med.id)
+        if detected_lang == "kn":
+            info_msg = (
+                f"{med.display_name} ({edu.category}) — ಉಪಯೋಗ: {edu.common_uses} "
+                f"ಅಡ್ಡಪರಿಣಾಮಗಳು: {edu.side_effects} ಮುನ್ನೆಚ್ಚರಿಕೆ: {edu.precautions} "
+                f"(ಮೂಲ: {edu.source_name}, {edu.verified_at.isoformat()})."
+            )
+        elif detected_lang == "hi":
+            info_msg = (
+                f"{med.display_name} ({edu.category}) — उपयोग: {edu.common_uses} "
+                f"साइड इफेक्ट: {edu.side_effects} सावधानियां: {edu.precautions} "
+                f"(स्रोत: {edu.source_name}, {edu.verified_at.isoformat()})."
+            )
+        else:
+            info_msg = (
+                f"{med.display_name} ({edu.category}): {edu.common_uses} Common side effects: {edu.side_effects} "
+                f"Precautions: {edu.precautions} (Source: {edu.source_name}, verified {edu.verified_at.isoformat()})."
+            )
+        return _finalize(info_msg, med_id_context=med.id)
 
     # --- STATE-CHANGING INTENTS (STRICT CONFIRMATION GATE) ---
     if intent == "confirm_dose":
@@ -372,24 +446,40 @@ def handle_text_query(
                 pending = windowed
 
         if not pending:
-            return _finalize("No pending scheduled dose matched your request today.", final_source="clarification")
+            no_pending_msg = {
+                "kn": "ಇಂದು ದೃಢೀಕರಿಸಲು ಯಾವುದೇ ಬಾಕಿ ಡೋಸ್ ಕಂಡುಬಂದಿಲ್ಲ.",
+                "hi": "आज कन्फर्म करने के लिए कोई लंबित डोज़ नहीं मिली।",
+            }.get(detected_lang, "No pending scheduled dose matched your request today.")
+            return _finalize(no_pending_msg, final_source="clarification")
         if len(pending) > 1:
             options = ", ".join(
                 f"{d.display_name} ({d.scheduled_at.astimezone(tz).strftime('%H:%M')})" for d in pending[:4]
             )
-            return _finalize(
+            multi_msg = {
+                "kn": f"ಒಂದಕ್ಕಿಂತ ಹೆಚ್ಚು ಬಾಕಿ ಡೋಸ್‌ಗಳಿವೆ ({options}). ದಯವಿಟ್ಟು ಔಷಧಿಯ ಹೆಸರು ಅಥವಾ ಸಮಯ ತಿಳಿಸಿ.",
+                "hi": f"कई लंबित डोज़ मिली हैं ({options})। कृपया दवाई का नाम या समय बताएं।",
+            }.get(
+                detected_lang,
                 f"Multiple pending doses found ({options}). Please mention which medicine or time you took.",
-                final_source="clarification",
             )
+            return _finalize(multi_msg, final_source="clarification")
 
         target_dose = pending[0]
+        spoken_qty, is_pack = extract_quantity_and_unit(norm_text)
+        actual_qty = (
+            spoken_qty.quantize(Decimal("0.01"))
+            if spoken_qty is not None
+            and not is_pack
+            and Decimal("0") < spoken_qty <= target_dose.expected_qty * Decimal("4")
+            else target_dose.expected_qty
+        )
         token = uuid.uuid4()
         proposed = {
             "action_type": "confirm_dose",
             "dose_event_id": str(target_dose.id),
             "personal_med_id": str(target_dose.personal_med_id),
             "medicine_name": target_dose.display_name,
-            "actual_qty": str(target_dose.expected_qty),
+            "actual_qty": str(actual_qty),
             "unit": target_dose.dose_unit,
         }
         state.pending_action = proposed
@@ -397,7 +487,7 @@ def handle_text_query(
         return _finalize(
             _LOCALIZED_PREFIXES["confirm_dose_prompt"][detected_lang].format(
                 name=target_dose.display_name,
-                qty=target_dose.expected_qty,
+                qty=actual_qty,
                 unit=target_dose.dose_unit,
             ),
             requires_confirmation=True,
@@ -508,11 +598,23 @@ def execute_confirmed_action(
                 client_event_id=uuid.uuid4(),
             ),
         )
-        return AssistantResponse(
-            reply_text=(
+        if lang == "kn":
+            confirm_reply = (
+                f"{pending['medicine_name']} ತೆಗೆದುಕೊಂಡಿದ್ದೀರಿ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ ({res.dose.status}). "
+                f"ಬಾಕಿ ಸ್ಟಾಕ್: {res.updated_confirmed_stock} {pending['unit']}."
+            )
+        elif lang == "hi":
+            confirm_reply = (
+                f"{pending['medicine_name']} को लिया गया मार्क कर दिया गया है ({res.dose.status})। "
+                f"बचा स्टॉक: {res.updated_confirmed_stock} {pending['unit']}।"
+            )
+        else:
+            confirm_reply = (
                 f"Confirmed {pending['medicine_name']} as {res.dose.status}. "
                 f"Remaining stock: {res.updated_confirmed_stock} {pending['unit']}(s)."
-            ),
+            )
+        return AssistantResponse(
+            reply_text=confirm_reply,
             language=lang,  # type: ignore[arg-type]
             intent="confirm_dose",
             confidence=1.0,
@@ -532,11 +634,23 @@ def execute_confirmed_action(
                 client_event_id=uuid.uuid4(),
             ),
         )
-        return AssistantResponse(
-            reply_text=(
+        if lang == "kn":
+            stock_reply = (
+                f"{pending['medicine_name']} ಸ್ಟಾಕ್‌ಗೆ +{pending['total_units_to_add']} {pending['unit']} ಸೇರಿಸಲಾಗಿದೆ. "
+                f"ಹೊಸ ದೃಢೀಕೃತ ಸ್ಟಾಕ್: {tx.balance_after}."
+            )
+        elif lang == "hi":
+            stock_reply = (
+                f"{pending['medicine_name']} के स्टॉक में +{pending['total_units_to_add']} {pending['unit']} जोड़ दिए गए हैं। "
+                f"नया कन्फर्म स्टॉक: {tx.balance_after}।"
+            )
+        else:
+            stock_reply = (
                 f"Updated {pending['medicine_name']} stock by +{pending['total_units_to_add']} {pending['unit']}(s). "
                 f"New confirmed balance: {tx.balance_after}."
-            ),
+            )
+        return AssistantResponse(
+            reply_text=stock_reply,
             language=lang,  # type: ignore[arg-type]
             intent="update_stock_purchase",
             confidence=1.0,

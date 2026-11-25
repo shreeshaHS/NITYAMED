@@ -22,6 +22,10 @@ def _isolate_test_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None, N
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("SMTP_USER", "")
     monkeypatch.setenv("SMTP_PASSWORD", "")
+    monkeypatch.setenv("HF_TOKEN", "")
+    monkeypatch.setenv("HF_SPACE_URL", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    monkeypatch.setenv("STT_API_URL", "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

@@ -65,9 +65,9 @@ def _setup_dolo_with_schedule(client: TestClient, db_session: Session, headers: 
 def test_ml_benchmark_and_saved_artifact() -> None:
     assert MODEL_PATH.exists()
     report = evaluate_models()
-    assert report["dataset_size"] >= 350
+    assert report["dataset_size"] >= 600
     best_f1 = max(m["macro_f1"] for m in report["models"].values())
-    assert best_f1 >= 0.65
+    assert best_f1 >= 0.80
 
 
 def test_assistant_readonly_multilingual_and_dialogue_followup(
@@ -260,3 +260,115 @@ def test_kundapura_kannada_dialect_and_llm_fallback(
         assert resp_fb.json()["intent"] == "today_schedule"
         assert resp_fb.json()["classification_source"] == "llm_fallback"
         assert "Dolo 650" in resp_fb.json()["reply_text"]
+
+
+def test_real_world_hands_free_voice_confirmation_and_localized_replies(
+    client: TestClient, db_session: Session
+) -> None:
+    headers = _auth_header(client, "handsfree@example.com")
+    med = _setup_dolo_with_schedule(client, db_session, headers)
+
+    # Voice wake-word + ASR typo query resolves cleanly
+    asr_q = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "Hey NityaMed, how mny tablts of Dolo hv i left?"},
+    )
+    assert asr_q.status_code == 200
+    assert asr_q.json()["intent"] == "check_stock"
+    assert "15.00" in asr_q.json()["reply_text"]
+
+    # Native Kannada info + Hindi refill replies respond in native scripts
+    kn_info = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "ಡೋಲೋ ಮಾತ್ರೆಯ ಉಪಯೋಗ ಏನು"},
+    )
+    assert kn_info.status_code == 200
+    assert kn_info.json()["language"] == "kn"
+    assert kn_info.json()["intent"] == "medicine_info"
+    assert "ಮೂಲ:" in kn_info.json()["reply_text"]
+
+    hi_ref = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "मुझे अपनी दवाई कब रीफिल करनी चाहिए"},
+    )
+    assert hi_ref.status_code == 200
+    assert hi_ref.json()["language"] == "hi"
+    assert hi_ref.json()["intent"] == "refill_check"
+    assert "रीफिल सारांश" in hi_ref.json()["reply_text"]
+
+    # Hands-free voice confirmation: stage dose, then speak "ಹೌದು" (yes) -> commits -1 tablet
+    staged = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "ನಾನು ಈಗಷ್ಟೇ ಡೋಲೋ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡೆ"},
+    )
+    assert staged.status_code == 200
+    assert staged.json()["intent"] == "confirm_dose"
+    assert staged.json()["requires_confirmation"] is True
+
+    spoken_yes = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "ಹೌದು"},
+    )
+    assert spoken_yes.status_code == 200
+    assert spoken_yes.json()["intent"] == "confirm_dose"
+    assert spoken_yes.json()["requires_confirmation"] is False
+    assert "14.00" in spoken_yes.json()["reply_text"]
+    assert client.get(f"/api/v1/medicines/{med['id']}", headers=headers).json()["medicine"]["confirmed_stock"] == "14.00"
+
+
+def test_huggingface_whisper_and_bounded_dialect_adapters(monkeypatch) -> None:
+    import httpx
+    from app.core.config import get_settings
+    from app.modules.assistant.adapters import BoundedLLMAdapter, STTAdapter
+
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    get_settings.cache_clear()
+
+    class _FakeResp:
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    def _fake_hf_post(url: str, **kwargs):
+        if "hf-inference/models" in url:
+            return _FakeResp({"text": "how many dolo left"})
+        if "v1/chat/completions" in url:
+            return _FakeResp({
+                "choices": [{"message": {"content": '{"intent": "check_stock", "confidence": 0.91}'}}]
+            })
+        return _FakeResp({"intent": "today_schedule", "confidence": 0.94})
+
+    monkeypatch.setattr(httpx, "post", _fake_hf_post)
+
+    stt = STTAdapter().transcribe(b"RIFF0000", "query.wav", "en")
+    assert stt.transcript == "how many dolo left"
+
+    llm_intent = BoundedLLMAdapter().classify_dialect_intent("dolo eshtide heli")
+    assert llm_intent == ("check_stock", 0.91)
+
+    # Disallowed/unsafe intent returned by an LLM must be rejected
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, **kwargs: _FakeResp({
+            "choices": [{"message": {"content": '{"intent": "prescribe_drug", "confidence": 0.99}'}}]
+        }),
+    )
+    assert BoundedLLMAdapter().classify_dialect_intent("give medicine") is None
+
+    # Optional self-hosted MuRIL HF Space takes precedence when configured
+    monkeypatch.setenv("HF_SPACE_URL", "https://demo-user-nityamed-muril.hf.space")
+    get_settings.cache_clear()
+    monkeypatch.setattr(httpx, "post", _fake_hf_post)
+    assert BoundedLLMAdapter().classify_dialect_intent("ivatt enu tinbeku") == ("today_schedule", 0.94)
+    get_settings.cache_clear()
