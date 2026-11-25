@@ -1,40 +1,117 @@
-"""Email delivery service supporting SMTP in production and safe dev logging."""
+"""Email delivery service supporting Brevo/Resend HTTPS APIs, SMTP, and safe dev logging."""
 
 from email.message import EmailMessage
 import logging
 import smtplib
+import socket
+
+import httpx
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("nityamed.email")
 
 
-def send_email(to_email: str, subject: str, body: str) -> bool:
-    """Send a plain-text email via SMTP if configured.
+def _send_via_brevo(api_key: str, from_email: str, to_email: str, subject: str, body: str) -> bool:
+    """Send email over HTTPS (port 443) via Brevo Transactional API."""
+    resp = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={"api-key": api_key, "Content-Type": "application/json"},
+        json={
+            "sender": {"name": "NityaMed", "email": from_email},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "textContent": body,
+        },
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return True
 
-    Returns True when sent via SMTP, or False when running in local dev-log mode.
+
+def _send_via_resend(api_key: str, from_email: str, to_email: str, subject: str, body: str) -> bool:
+    """Send email over HTTPS (port 443) via Resend API."""
+    resp = httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "from": f"NityaMed <{from_email}>",
+            "to": [to_email],
+            "subject": subject,
+            "text": body,
+        },
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return True
+
+
+def _resolve_ipv4_host(host: str, port: int) -> str:
+    """Resolve IPv4 address so containers without IPv6 routes don't hit ENETUNREACH."""
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        if infos:
+            return str(infos[0][4][0])
+    except OSError:
+        pass
+    return host
+
+
+def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, str]:
+    """Send a plain-text email via Brevo HTTPS, Resend HTTPS, or SMTP.
+
+    Never raises transport errors to callers so auth/maintenance endpoints stay resilient.
     """
     settings = get_settings()
+    sender = settings.smtp_from_email or settings.smtp_user or "noreply@nityamed.local"
+
+    if settings.brevo_api_key:
+        try:
+            _send_via_brevo(settings.brevo_api_key, sender, to_email, subject, body)
+            return True, f"Sent via Brevo HTTPS API to {to_email}."
+        except Exception as exc:
+            logger.warning("Brevo HTTPS email failed: %s", exc)
+            return False, f"Brevo delivery error: {exc}"
+
+    if settings.resend_api_key:
+        try:
+            _send_via_resend(settings.resend_api_key, sender, to_email, subject, body)
+            return True, f"Sent via Resend HTTPS API to {to_email}."
+        except Exception as exc:
+            logger.warning("Resend HTTPS email failed: %s", exc)
+            return False, f"Resend delivery error: {exc}"
+
     if not settings.smtp_host or not settings.smtp_user or not settings.smtp_password:
         logger.info("Dev email to %s | Subject: %s | Body: %s", to_email, subject, body)
-        return False
+        return False, "No email provider configured; logged in local dev mode."
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = settings.smtp_from_email or settings.smtp_user
+    msg["From"] = sender
     msg["To"] = to_email
     msg.set_content(body)
 
-    if settings.smtp_port == 465:
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-            server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(msg)
-    else:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(settings.smtp_user, settings.smtp_password)
-            server.send_message(msg)
-    return True
+    try:
+        connect_host = _resolve_ipv4_host(settings.smtp_host, settings.smtp_port)
+        if settings.smtp_port == 465:
+            with smtplib.SMTP_SSL(connect_host, settings.smtp_port, timeout=10) as server:
+                server.login(settings.smtp_user, settings.smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(connect_host, settings.smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(settings.smtp_user, settings.smtp_password)
+                server.send_message(msg)
+        return True, f"SMTP test email sent successfully to {to_email}."
+    except Exception as exc:
+        logger.warning("SMTP delivery failed to %s: %s", to_email, exc)
+        return False, f"SMTP delivery error: {exc}"
+
+
+def send_email(to_email: str, subject: str, body: str) -> bool:
+    """Send an email and return whether external delivery succeeded."""
+    sent, _ = send_email_detailed(to_email, subject, body)
+    return sent
 
 
 def send_verification_email(to_email: str, otp_code: str) -> bool:

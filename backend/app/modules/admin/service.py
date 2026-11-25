@@ -15,7 +15,7 @@ from app.modules.admin.schemas import (
     AdminTestEmailResponse,
 )
 from app.modules.assistant.nlp import MODEL_PATH
-from app.modules.auth.email_service import send_email
+from app.modules.auth.email_service import send_email_detailed
 from app.modules.auth.models import PatientProfile, User
 from app.modules.medicines.models import MedicineCatalogue, MedicineEducation, PersonalMedicine
 from app.modules.medicines.schemas import CatalogueItemResponse
@@ -173,7 +173,11 @@ def get_anonymized_metrics(db: Session) -> AdminHealthMetricsResponse:
         or 0
     )
     total_notifications = db.scalar(select(func.count(Notification.id))) or 0
-    smtp_configured = bool(settings.smtp_host and settings.smtp_user and settings.smtp_password)
+    smtp_configured = bool(
+        settings.brevo_api_key
+        or settings.resend_api_key
+        or (settings.smtp_host and settings.smtp_user and settings.smtp_password)
+    )
     ml_ready = MODEL_PATH.exists()
 
     return AdminHealthMetricsResponse(
@@ -196,22 +200,10 @@ def get_anonymized_metrics(db: Session) -> AdminHealthMetricsResponse:
 
 
 def send_admin_test_email(recipient_email: str) -> AdminTestEmailResponse:
-    """Trigger a non-sensitive diagnostic email via configured SMTP."""
-    try:
-        sent = send_email(
-            recipient_email,
-            "NityaMed Admin — SMTP Delivery Test",
-            "This is a system health verification email from the NityaMed Admin Console.",
-        )
-    except Exception as exc:
-        return AdminTestEmailResponse(sent=False, detail=f"SMTP delivery error: {exc}")
-
-    if sent:
-        return AdminTestEmailResponse(
-            sent=True,
-            detail=f"SMTP test email sent successfully to {recipient_email}.",
-        )
-    return AdminTestEmailResponse(
-        sent=False,
-        detail="SMTP is not configured in backend/.env; message logged in local dev mode.",
+    """Trigger a non-sensitive diagnostic email via configured email provider."""
+    sent, detail = send_email_detailed(
+        recipient_email,
+        "NityaMed Admin — Email Delivery Test",
+        "This is a system health verification email from the NityaMed Admin Console.",
     )
+    return AdminTestEmailResponse(sent=sent, detail=detail)
