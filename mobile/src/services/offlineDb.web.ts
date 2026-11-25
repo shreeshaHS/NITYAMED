@@ -1,6 +1,7 @@
 /** Web companion fallback for offlineDb (browsers run online against Render FastAPI). */
 
 import type { DailyDoseItem, PersonalMedicine, SyncBootstrapResponse } from '../types/api';
+import { getLocalDateString } from '../utils/date';
 
 let cachedMeds: PersonalMedicine[] = [];
 let cachedDoses: DailyDoseItem[] = [];
@@ -14,7 +15,12 @@ export const offlineDb = {
     return cachedMeds;
   },
   async getLocalDailyDoses(datePrefix: string): Promise<DailyDoseItem[]> {
-    return cachedDoses.filter((d) => d.scheduled_at.startsWith(datePrefix));
+    return cachedDoses.filter((d) => {
+      const parsed = new Date(d.scheduled_at);
+      return !Number.isNaN(parsed.getTime())
+        ? getLocalDateString(parsed) === datePrefix
+        : d.scheduled_at.startsWith(datePrefix);
+    });
   },
   async queueOfflineDoseAction(): Promise<string> {
     return '';

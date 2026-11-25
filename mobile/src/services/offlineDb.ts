@@ -2,6 +2,7 @@
 
 import * as SQLite from 'expo-sqlite';
 import { api } from './api';
+import { getLocalDateString } from '../utils/date';
 import { generateUuid } from '../utils/uuid';
 import type { DailyDoseItem, PersonalMedicine, SyncBootstrapResponse } from '../types/api';
 
@@ -129,10 +130,14 @@ export const offlineDb = {
   async getLocalDailyDoses(datePrefix: string): Promise<DailyDoseItem[]> {
     const db = await getDb();
     const rows = await db.getAllAsync<DailyDoseItem>(
-      'SELECT * FROM local_dose_events WHERE scheduled_at LIKE ? ORDER BY scheduled_at ASC',
-      [`${datePrefix}%`]
+      'SELECT * FROM local_dose_events ORDER BY scheduled_at ASC'
     );
-    return rows;
+    return rows.filter((d) => {
+      const parsed = new Date(d.scheduled_at);
+      return !Number.isNaN(parsed.getTime())
+        ? getLocalDateString(parsed) === datePrefix
+        : d.scheduled_at.startsWith(datePrefix);
+    });
   },
 
   async queueOfflineDoseAction(

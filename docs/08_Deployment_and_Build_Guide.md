@@ -12,14 +12,14 @@
    $env:DATABASE_URL="postgresql+psycopg://USER:PASSWORD@HOST:5432/nityamed?sslmode=require"
    .\.venv\Scripts\python.exe -m alembic upgrade head
    .\.venv\Scripts\python.exe -m app.modules.medicines.seed
-   .\.venv\Scripts\python.exe -m app.modules.medicines.import_cli "C:\Users\asus\Desktop\Indian-Medicine-Dataset-main\DATA\updated_indian_medicine_data.csv"
+   .\.venv\Scripts\python.exe -m app.modules.medicines.import_cli --file "C:\Users\asus\Desktop\Indian-Medicine-Dataset-main\DATA\updated_indian_medicine_data.csv"
    .\.venv\Scripts\python.exe -m app.modules.auth.create_admin_cli --email nityamed578@gmail.com --password "<STRONG_ADMIN_PASSWORD>"
    ```
 
 ## 2. Deploy Backend + Web to Render
 1. Push `NityaMed` to a GitHub repository.
 2. In Render Dashboard, click **New -> Blueprint** and select the repo containing `render.yaml`.
-3. Fill in the prompted environment variables (`DATABASE_URL`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`).
+3. Fill in the prompted environment variables (`DATABASE_URL`, `REQUIRE_EMAIL_VERIFICATION=true`, and for Render Free Tier email delivery set `EMAIL_WEBHOOK_URL` + `EMAIL_WEBHOOK_SECRET` using your Google Apps Script HTTPS relay since Render free containers block outbound SMTP ports).
 4. Update `EXPO_PUBLIC_API_URL` on `nityamed-web` (if your API service URL differs from `https://nityamed-api.onrender.com/api/v1`) and update `CORS_ORIGINS` on `nityamed-api` to match your exact web URL.
 
 ## 3. Scheduled Dose Expiry, Refill & Backup Email Sweep

@@ -16,10 +16,18 @@ from app.core.security import (
     verify_password,
 )
 from app.modules.auth.email_service import (
+    is_email_transport_configured,
     send_password_reset_email,
     send_verification_email,
+    send_verification_email_detailed,
 )
-from app.modules.auth.models import EmailVerificationCode, PatientProfile, RefreshToken, User
+from app.modules.auth.models import (
+    EmailVerificationCode,
+    PatientProfile,
+    PendingRegistration,
+    RefreshToken,
+    User,
+)
 from app.modules.auth.schemas import (
     AuthMeResponse,
     LoginRequest,
@@ -85,23 +93,85 @@ def _create_and_send_otp(
 
 
 def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
-    """Register a new patient account, initial profile, and send email verification OTP."""
+    """Register a patient: require OTP verification before creating User when enforced."""
     settings = get_settings()
     normalized_email = payload.email.strip().lower()
     existing = db.scalar(select(User).where(User.email == normalized_email))
-    if existing is not None:
-        if settings.require_email_verification and not existing.is_email_verified and existing.role == "patient":
+
+    if settings.require_email_verification:
+        if existing is not None and (existing.is_email_verified or existing.role != "patient"):
+            raise AppError(409, "EMAIL_ALREADY_EXISTS", "An account with this email already exists")
+
+        otp = f"{secrets.randbelow(1000000):06d}"
+        sent, detail = send_verification_email_detailed(normalized_email, otp)
+        dev_fallback = (
+            not sent
+            and settings.environment == "development"
+            and not is_email_transport_configured()
+        )
+        if not sent and not dev_fallback:
+            raise AppError(
+                502,
+                "EMAIL_DELIVERY_FAILED",
+                f"Unable to send verification code to {normalized_email}: {detail}. Account was not created.",
+            )
+
+        # Clean up any legacy unverified patient shell with no data so signup uses PendingRegistration.
+        if existing is not None and not existing.is_email_verified and existing.role == "patient":
+            from app.modules.medicines.models import PersonalMedicine
+
+            has_meds = db.scalar(
+                select(PersonalMedicine.id).where(PersonalMedicine.user_id == existing.id).limit(1)
+            )
+            if has_meds is None:
+                db.delete(existing)
+                db.flush()
+                existing = None
+
+        now = datetime.now(UTC)
+        expires_at = now + timedelta(minutes=15)
+        if existing is not None:
             existing.password_hash = hash_password(payload.password)
             if existing.profile is not None:
                 existing.profile.display_name = payload.display_name.strip()
                 existing.profile.preferred_lang = payload.preferred_lang
-            email_sent, dev_otp = _create_and_send_otp(db, existing)
-            db.commit()
-            return TokenResponse(
-                verification_required=True,
-                email_sent=email_sent,
-                dev_otp_preview=dev_otp,
+            db.add(
+                EmailVerificationCode(
+                    user_id=existing.id,
+                    purpose="email_verify",
+                    code_hash=hash_token(otp),
+                    expires_at=expires_at,
+                )
             )
+        else:
+            pending = db.scalar(
+                select(PendingRegistration).where(PendingRegistration.email == normalized_email)
+            )
+            if pending is None:
+                pending = PendingRegistration(
+                    email=normalized_email,
+                    password_hash=hash_password(payload.password),
+                    display_name=payload.display_name.strip(),
+                    preferred_lang=payload.preferred_lang,
+                    code_hash=hash_token(otp),
+                    expires_at=expires_at,
+                )
+                db.add(pending)
+            else:
+                pending.password_hash = hash_password(payload.password)
+                pending.display_name = payload.display_name.strip()
+                pending.preferred_lang = payload.preferred_lang
+                pending.code_hash = hash_token(otp)
+                pending.expires_at = expires_at
+
+        db.commit()
+        return TokenResponse(
+            verification_required=True,
+            email_sent=sent,
+            dev_otp_preview=otp if dev_fallback else None,
+        )
+
+    if existing is not None:
         raise AppError(409, "EMAIL_ALREADY_EXISTS", "An account with this email already exists")
 
     user = User(
@@ -119,20 +189,7 @@ def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
         preferred_lang=payload.preferred_lang,
     )
     db.add(profile)
-
-    email_sent, dev_otp = _create_and_send_otp(db, user)
-    if settings.require_email_verification:
-        db.commit()
-        return TokenResponse(
-            verification_required=True,
-            email_sent=email_sent,
-            dev_otp_preview=dev_otp,
-        )
-
-    token_resp = _issue_session_tokens(db, user)
-    token_resp.email_sent = email_sent
-    token_resp.dev_otp_preview = dev_otp
-    return token_resp
+    return _issue_session_tokens(db, user)
 
 
 def login_user(db: Session, payload: LoginRequest) -> TokenResponse:
@@ -141,6 +198,15 @@ def login_user(db: Session, payload: LoginRequest) -> TokenResponse:
     user = db.scalar(select(User).where(User.email == normalized_email))
 
     if user is None:
+        pending = db.scalar(
+            select(PendingRegistration).where(PendingRegistration.email == normalized_email)
+        )
+        if pending is not None and verify_password(payload.password, pending.password_hash):
+            raise AppError(
+                403,
+                "EMAIL_NOT_VERIFIED",
+                "Please verify your email address using the 6-digit code sent to your inbox.",
+            )
         verify_password(payload.password, _DUMMY_HASH)
         raise AppError(401, "INVALID_CREDENTIALS", "Invalid email or password")
 
@@ -161,13 +227,45 @@ def login_user(db: Session, payload: LoginRequest) -> TokenResponse:
 
 
 def verify_email_otp(db: Session, email: str, otp_code: str) -> TokenResponse:
-    """Verify a 6-digit email OTP and issue session tokens."""
+    """Verify a 6-digit email OTP, finalize account creation if pending, and issue tokens."""
     normalized_email = email.strip().lower()
+    now = datetime.now(UTC)
+
+    pending = db.scalar(
+        select(PendingRegistration).where(PendingRegistration.email == normalized_email)
+    )
+    if pending is not None:
+        if pending.code_hash != hash_token(otp_code) or _as_utc(pending.expires_at) <= now:
+            raise AppError(400, "INVALID_VERIFICATION_CODE", "Verification code is invalid or expired")
+
+        existing = db.scalar(select(User).where(User.email == normalized_email))
+        if existing is not None:
+            raise AppError(409, "EMAIL_ALREADY_EXISTS", "An account with this email already exists")
+
+        user = User(
+            email=normalized_email,
+            password_hash=pending.password_hash,
+            role="patient",
+            is_email_verified=True,
+        )
+        db.add(user)
+        db.flush()
+
+        db.add(
+            PatientProfile(
+                user_id=user.id,
+                display_name=pending.display_name,
+                preferred_lang=pending.preferred_lang,
+            )
+        )
+        db.delete(pending)
+        db.flush()
+        return _issue_session_tokens(db, user)
+
     user = db.scalar(select(User).where(User.email == normalized_email))
     if user is None:
-        raise AppError(404, "USER_NOT_FOUND", "No account found for this email")
+        raise AppError(404, "USER_NOT_FOUND", "No pending registration or account found for this email")
 
-    now = datetime.now(UTC)
     code_record = db.scalar(
         select(EmailVerificationCode)
         .where(
@@ -239,17 +337,68 @@ def reset_password_with_otp(
 
 
 def resend_verification_otp(db: Session, email: str) -> dict:
-    """Send a fresh 6-digit email verification code."""
+    """Send a fresh 6-digit email verification code for pending signups or legacy unverified users."""
+    settings = get_settings()
     normalized_email = email.strip().lower()
+    pending = db.scalar(
+        select(PendingRegistration).where(PendingRegistration.email == normalized_email)
+    )
+    if pending is not None:
+        otp = f"{secrets.randbelow(1000000):06d}"
+        sent, detail = send_verification_email_detailed(normalized_email, otp)
+        dev_fallback = (
+            not sent
+            and settings.environment == "development"
+            and not is_email_transport_configured()
+        )
+        if not sent and not dev_fallback:
+            raise AppError(
+                502,
+                "EMAIL_DELIVERY_FAILED",
+                f"Unable to resend verification code to {normalized_email}: {detail}",
+            )
+        pending.code_hash = hash_token(otp)
+        pending.expires_at = datetime.now(UTC) + timedelta(minutes=15)
+        db.commit()
+        return {
+            "already_verified": False,
+            "email_sent": sent,
+            "dev_otp_preview": otp if dev_fallback else None,
+        }
+
     user = db.scalar(select(User).where(User.email == normalized_email))
     if user is None:
-        raise AppError(404, "USER_NOT_FOUND", "No account found for this email")
+        raise AppError(404, "USER_NOT_FOUND", "No pending registration or account found for this email")
     if user.is_email_verified:
         return {"already_verified": True, "email_sent": False, "dev_otp_preview": None}
 
-    email_sent, dev_otp = _create_and_send_otp(db, user)
+    otp = f"{secrets.randbelow(1000000):06d}"
+    sent, detail = send_verification_email_detailed(normalized_email, otp)
+    dev_fallback = (
+        not sent
+        and settings.environment == "development"
+        and not is_email_transport_configured()
+    )
+    if not sent and not dev_fallback:
+        raise AppError(
+            502,
+            "EMAIL_DELIVERY_FAILED",
+            f"Unable to resend verification code to {normalized_email}: {detail}",
+        )
+    db.add(
+        EmailVerificationCode(
+            user_id=user.id,
+            purpose="email_verify",
+            code_hash=hash_token(otp),
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+        )
+    )
     db.commit()
-    return {"already_verified": False, "email_sent": email_sent, "dev_otp_preview": dev_otp}
+    return {
+        "already_verified": False,
+        "email_sent": sent,
+        "dev_otp_preview": otp if dev_fallback else None,
+    }
 
 
 def build_auth_me(user: User) -> AuthMeResponse:

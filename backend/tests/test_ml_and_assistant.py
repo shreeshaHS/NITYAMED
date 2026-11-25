@@ -46,13 +46,15 @@ def _setup_dolo_with_schedule(client: TestClient, db_session: Session, headers: 
         },
     ).json()
 
-    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+    today = now_ist.date()
+    active_time = now_ist.strftime("%H:%M")
     client.post(
         f"/api/v1/medicines/{med['id']}/schedules",
         headers=headers,
         json={
             "frequency_type": "once_daily",
-            "times": [{"time": "08:00", "dose": "1.00"}],
+            "times": [{"time": active_time, "dose": "1.00"}],
             "start_date": today.isoformat(),
             "horizon_days": 5,
         },

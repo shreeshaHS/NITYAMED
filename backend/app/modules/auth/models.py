@@ -70,6 +70,27 @@ class EmailVerificationCode(Base):
     user: Mapped["User"] = relationship(back_populates="verification_codes")
 
 
+class PendingRegistration(Base):
+    """Unverified signup payload held until 6-digit email OTP verification succeeds."""
+
+    __tablename__ = "pending_registrations"
+    __table_args__ = (
+        CheckConstraint("preferred_lang IN ('en', 'kn', 'hi')", name="ck_pending_reg_lang"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    preferred_lang: Mapped[str] = mapped_column(String(5), nullable=False, default="en")
+    code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+
+
 class RefreshToken(Base):
     """Revocable hashed refresh token for session continuity."""
 

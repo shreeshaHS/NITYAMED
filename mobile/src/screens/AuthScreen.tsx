@@ -133,11 +133,15 @@ export function AuthScreen({
     try {
       const res = await api.resendVerification(email.trim());
       setDevOtpHint(res.dev_otp_preview || null);
-      setInfoMsg(
-        res.email_sent
-          ? 'A fresh verification code was sent to your email.'
-          : 'Fresh verification code generated.'
-      );
+      if (res.already_verified) {
+        setInfoMsg('Your email is already verified. Please sign in.');
+      } else if (res.email_sent) {
+        setInfoMsg('A fresh verification code was sent to your email.');
+      } else if (res.dev_otp_preview) {
+        setInfoMsg('Enter the fresh dev verification code shown below.');
+      } else {
+        setErrorMsg('Unable to deliver verification email right now. Please check email settings.');
+      }
     } catch (err) {
       setErrorMsg(err instanceof ApiError ? err.message : 'Unable to resend code.');
     } finally {

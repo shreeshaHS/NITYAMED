@@ -131,12 +131,16 @@ export function TodayScreen({
         await api.skipDose(dose.id, generateUuid());
       } else if (Platform.OS !== 'web') {
         await offlineDb.queueOfflineDoseAction(dose, 'DOSE_SKIP');
+      } else {
+        throw new Error('Offline dose skip requires the Android app.');
       }
       await onRefresh();
-    } catch {
+    } catch (err) {
       if (Platform.OS !== 'web') {
         await offlineDb.queueOfflineDoseAction(dose, 'DOSE_SKIP');
         await onRefresh();
+      } else {
+        setFeedback(err instanceof Error ? err.message : 'Unable to skip dose.');
       }
     } finally {
       setBusyId(null);
@@ -145,6 +149,7 @@ export function TodayScreen({
 
   const handleSnooze = async (dose: DailyDoseItem) => {
     setBusyId(dose.id);
+    setFeedback(null);
     try {
       if (isOnline) {
         await api.snoozeDose(dose.id, 15);
@@ -152,6 +157,8 @@ export function TodayScreen({
       } else {
         setFeedback('Snooze saved locally; alarm will remind you shortly.');
       }
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : 'Unable to snooze dose right now.');
     } finally {
       setBusyId(null);
     }

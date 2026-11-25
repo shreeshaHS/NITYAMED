@@ -2,10 +2,11 @@
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token, hash_password
-from app.modules.auth.models import User
+from app.modules.auth.models import PendingRegistration, User
 
 
 def _register_sample_patient(client: TestClient, email: str = "asha@example.com") -> dict:
@@ -165,7 +166,7 @@ def test_role_isolation_blocks_admin_from_patient_profile(
 
 
 def test_email_verification_otp_flow_with_enforcement(
-    client: TestClient, monkeypatch
+    client: TestClient, db_session: Session, monkeypatch
 ) -> None:
     from app.core.config import get_settings
 
@@ -185,6 +186,14 @@ def test_email_verification_otp_flow_with_enforcement(
     reg_data = reg.json()
     assert reg_data["verification_required"] is True
     assert reg_data["access_token"] is None
+    # User MUST NOT exist before OTP verification succeeds
+    assert db_session.scalar(select(User).where(User.email == "verify@example.com")) is None
+    assert (
+        db_session.scalar(
+            select(PendingRegistration).where(PendingRegistration.email == "verify@example.com")
+        )
+        is not None
+    )
 
     # Re-registering an unverified email refreshes OTP cleanly instead of blocking with 409
     reg_retry = client.post(
@@ -199,6 +208,7 @@ def test_email_verification_otp_flow_with_enforcement(
     assert reg_retry.status_code == 201
     otp = reg_retry.json()["dev_otp_preview"]
     assert otp and len(otp) == 6
+    assert db_session.scalar(select(User).where(User.email == "verify@example.com")) is None
 
     # Login before verification must be blocked
     blocked_login = client.post(
@@ -208,20 +218,28 @@ def test_email_verification_otp_flow_with_enforcement(
     assert blocked_login.status_code == 403
     assert blocked_login.json()["error"]["code"] == "EMAIL_NOT_VERIFIED"
 
-    # Wrong OTP fails
+    # Wrong OTP fails and still creates no User row
     bad_verify = client.post(
         "/api/v1/auth/verify-email",
         json={"email": "verify@example.com", "otp_code": "000000" if otp != "000000" else "111111"},
     )
     assert bad_verify.status_code == 400
+    assert db_session.scalar(select(User).where(User.email == "verify@example.com")) is None
 
-    # Valid OTP verifies email and returns tokens
+    # Valid OTP creates the User + Profile and returns tokens
     verified = client.post(
         "/api/v1/auth/verify-email",
         json={"email": "verify@example.com", "otp_code": otp},
     )
     assert verified.status_code == 200
     assert verified.json()["access_token"] is not None
+    assert db_session.scalar(select(User).where(User.email == "verify@example.com")) is not None
+    assert (
+        db_session.scalar(
+            select(PendingRegistration).where(PendingRegistration.email == "verify@example.com")
+        )
+        is None
+    )
 
     me = client.get(
         "/api/v1/auth/me",
@@ -229,6 +247,44 @@ def test_email_verification_otp_flow_with_enforcement(
     )
     assert me.status_code == 200
     assert me.json()["is_email_verified"] is True
+
+
+def test_register_aborts_when_email_delivery_fails(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "email_webhook_url", "https://script.google.com/macros/s/demo/exec")
+
+    def _timeout(*args, **kwargs):
+        raise OSError("timed out")
+
+    monkeypatch.setattr(httpx, "post", _timeout)
+
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "failed_delivery@example.com",
+            "password": "StrongPassword123",
+            "display_name": "Blocked User",
+            "preferred_lang": "en",
+        },
+    )
+    assert resp.status_code == 502
+    assert resp.json()["error"]["code"] == "EMAIL_DELIVERY_FAILED"
+    assert db_session.scalar(select(User).where(User.email == "failed_delivery@example.com")) is None
+    assert (
+        db_session.scalar(
+            select(PendingRegistration).where(
+                PendingRegistration.email == "failed_delivery@example.com"
+            )
+        )
+        is None
+    )
 
 
 def test_forgot_and_reset_password_revokes_old_sessions(client: TestClient) -> None:

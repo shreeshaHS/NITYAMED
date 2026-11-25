@@ -29,6 +29,7 @@ import type {
   PersonalMedicineDetail,
   SupportedLang,
 } from '../types/api';
+import { getLocalDateString } from '../utils/date';
 import { generateUuid } from '../utils/uuid';
 
 interface MedicinesScreenProps {
@@ -74,10 +75,31 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
   const [time1, setTime1] = useState('08:00');
   const [time2, setTime2] = useState('20:00');
   const [endDate, setEndDate] = useState('');
+  const [createdMedId, setCreatedMedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [detailModal, setDetailModal] = useState<PersonalMedicineDetail | null>(null);
+
+  const resetAddForm = () => {
+    setShowAddForm(false);
+    setSelectedCatalogue(null);
+    setIsCustom(false);
+    setCustomName('');
+    setCustomStrength('');
+    setCustomForm('tablet');
+    setDosePerIntake('1');
+    setInitialPacks('1');
+    setInitialLoose('0');
+    setPackSize('10');
+    setInstructions('');
+    setFreq('once_daily');
+    setTime1('08:00');
+    setTime2('20:00');
+    setEndDate('');
+    setCreatedMedId(null);
+    setErrorMsg(null);
+  };
 
   const handleSearch = async () => {
     if (!searchQ.trim()) return;
@@ -94,6 +116,7 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
   };
 
   const openCatalogueAdd = (item: CatalogueItem) => {
+    resetAddForm();
     setSelectedCatalogue(item);
     setIsCustom(false);
     setPackSize(item.standard_pack_size || '10');
@@ -101,45 +124,69 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
   };
 
   const openCustomAdd = () => {
+    resetAddForm();
     setSelectedCatalogue(null);
     setIsCustom(true);
     setShowAddForm(true);
   };
 
   const handleSaveMedicineAndSchedule = async () => {
-    setSaving(true);
     setErrorMsg(null);
-    try {
-      const form = isCustom ? customForm : selectedCatalogue!.dosage_form;
-      const unit = form === 'syrup' || form === 'drops' ? 'ml' : form === 'inhaler' ? 'puff' : form;
-      const med = await api.createMedicine({
-        catalogue_id: selectedCatalogue ? selectedCatalogue.id : null,
-        is_custom: isCustom,
-        display_name: isCustom ? customName.trim() : selectedCatalogue!.brand_name,
-        strength: isCustom ? customStrength.trim() : selectedCatalogue!.strength,
-        dosage_form: form,
-        dose_per_intake: dosePerIntake || '1',
-        dose_unit: unit,
-        stock_unit: unit,
-        units_per_pack: packSize ? packSize : null,
-        initial_packs: Number(initialPacks || '0'),
-        initial_loose_units: initialLoose || '0',
-        instructions: instructions.trim() || null,
-        client_event_id: generateUuid(),
-      });
+    if (isCustom && !customName.trim()) {
+      setErrorMsg('Please enter the medicine name.');
+      return;
+    }
+    const timeRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (freq !== 'as_needed' && !timeRegex.test(time1.trim())) {
+      setErrorMsg('Please enter a valid 24-hour Dose Time (HH:MM, e.g. 08:00).');
+      return;
+    }
+    if (freq === 'multiple_daily' && !timeRegex.test(time2.trim())) {
+      setErrorMsg('Please enter a valid 24-hour Evening Dose Time (HH:MM, e.g. 20:00).');
+      return;
+    }
+    if (freq === 'fixed_course' && endDate.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(endDate.trim())) {
+      setErrorMsg('Please enter End Date as YYYY-MM-DD (e.g. 2026-12-01).');
+      return;
+    }
 
-      const todayStr = new Date().toISOString().slice(0, 10);
+    setSaving(true);
+    try {
+      let targetMedId = createdMedId;
+      if (!targetMedId) {
+        const form = isCustom ? customForm : selectedCatalogue!.dosage_form;
+        const unit = form === 'syrup' || form === 'drops' ? 'ml' : form === 'inhaler' ? 'puff' : form;
+        const med = await api.createMedicine({
+          catalogue_id: selectedCatalogue ? selectedCatalogue.id : null,
+          is_custom: isCustom,
+          display_name: isCustom ? customName.trim() : selectedCatalogue!.brand_name,
+          strength: isCustom ? customStrength.trim() : selectedCatalogue!.strength,
+          dosage_form: form,
+          dose_per_intake: dosePerIntake || '1',
+          dose_unit: unit,
+          stock_unit: unit,
+          units_per_pack: packSize ? packSize : null,
+          initial_packs: Number(initialPacks || '0'),
+          initial_loose_units: initialLoose || '0',
+          instructions: instructions.trim() || null,
+          client_event_id: generateUuid(),
+        });
+        targetMedId = med.id;
+        setCreatedMedId(med.id);
+      }
+
+      const todayStr = getLocalDateString();
       const times =
         freq === 'as_needed'
           ? []
           : freq === 'multiple_daily'
             ? [
-                { time: time1, dose: dosePerIntake || '1' },
-                { time: time2, dose: dosePerIntake || '1' },
+                { time: time1.trim(), dose: dosePerIntake || '1' },
+                { time: time2.trim(), dose: dosePerIntake || '1' },
               ]
-            : [{ time: time1, dose: dosePerIntake || '1' }];
+            : [{ time: time1.trim(), dose: dosePerIntake || '1' }];
 
-      await api.createSchedule(med.id, {
+      await api.createSchedule(targetMedId, {
         frequency_type: freq,
         times,
         start_date: todayStr,
@@ -147,7 +194,7 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
         horizon_days: 14,
       });
 
-      setShowAddForm(false);
+      resetAddForm();
       setResults([]);
       setSearchQ('');
       await onRefresh();
@@ -446,7 +493,7 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
                 <PrimaryButton
                   title="Cancel"
                   variant="outline"
-                  onPress={() => setShowAddForm(false)}
+                  onPress={resetAddForm}
                 />
               </View>
             </View>

@@ -84,15 +84,23 @@ def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, s
         return False, f"SMTP delivery error: {exc}"
 
 
+def is_email_transport_configured() -> bool:
+    """Return True if an external email transport (HTTPS webhook or SMTP) is configured."""
+    settings = get_settings()
+    if settings.email_webhook_url:
+        return True
+    return bool(settings.smtp_host and settings.smtp_user and settings.smtp_password)
+
+
 def send_email(to_email: str, subject: str, body: str) -> bool:
     """Send an email and return whether external delivery succeeded."""
     sent, _ = send_email_detailed(to_email, subject, body)
     return sent
 
 
-def send_verification_email(to_email: str, otp_code: str) -> bool:
-    """Send a 6-digit email verification code."""
-    return send_email(
+def send_verification_email_detailed(to_email: str, otp_code: str) -> tuple[bool, str]:
+    """Send a 6-digit email verification code and return (sent, detail)."""
+    return send_email_detailed(
         to_email,
         "NityaMed — Verify Your Email Address",
         (
@@ -101,6 +109,12 @@ def send_verification_email(to_email: str, otp_code: str) -> bool:
             "This code expires in 15 minutes. If you did not register on NityaMed, please ignore this email."
         ),
     )
+
+
+def send_verification_email(to_email: str, otp_code: str) -> bool:
+    """Send a 6-digit email verification code."""
+    sent, _ = send_verification_email_detailed(to_email, otp_code)
+    return sent
 
 
 def send_password_reset_email(to_email: str, otp_code: str) -> bool:

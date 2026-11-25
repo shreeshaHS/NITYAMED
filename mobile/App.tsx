@@ -59,6 +59,7 @@ import type {
   SupportedLang,
 } from './src/types/api';
 import { generateUuid } from './src/utils/uuid';
+import { getLocalDateString } from './src/utils/date';
 
 type TabKey = 'today' | 'medicines' | 'inventory' | 'assistant' | 'reports' | 'settings';
 
@@ -95,7 +96,7 @@ export default function App() {
 
   const loadData = useCallback(async (onlineOverride?: boolean) => {
     const online = onlineOverride ?? isOnline;
-    const todayPrefix = new Date().toISOString().slice(0, 10);
+    const todayPrefix = getLocalDateString();
 
     if (Platform.OS !== 'web') {
       const cnt = await offlineDb.getPendingOutboxCount();
@@ -209,6 +210,26 @@ export default function App() {
     await loadData(true);
   };
 
+  const resetClientSessionState = async () => {
+    await tokenStore.clearSession();
+    await tokenStore.clearPin();
+    if (Platform.OS !== 'web') await offlineDb.clearAll();
+    setIsAuthenticated(false);
+    setUserRole('patient');
+    setActiveTab('today');
+    setPinLocked(false);
+    setSavedPin(null);
+    setProfile(null);
+    setMedicines([]);
+    setTodayDoses([]);
+    setInventory([]);
+    setRefills([]);
+    setReport(null);
+    setNotifications([]);
+    setPopupDose(null);
+    setDismissedPopupIds({});
+  };
+
   const handleLogout = async () => {
     try {
       const refresh = await tokenStore.getRefreshToken();
@@ -216,29 +237,11 @@ export default function App() {
     } catch {
       // Clear local session regardless.
     }
-    await tokenStore.clearSession();
-    await tokenStore.clearPin();
-    if (Platform.OS !== 'web') await offlineDb.clearAll();
-    setIsAuthenticated(false);
-    setUserRole('patient');
-    setPinLocked(false);
-    setSavedPin(null);
-    setProfile(null);
-    setMedicines([]);
-    setTodayDoses([]);
+    await resetClientSessionState();
   };
 
   const handleAccountDeleted = async () => {
-    await tokenStore.clearSession();
-    await tokenStore.clearPin();
-    if (Platform.OS !== 'web') await offlineDb.clearAll();
-    setIsAuthenticated(false);
-    setUserRole('patient');
-    setPinLocked(false);
-    setSavedPin(null);
-    setProfile(null);
-    setMedicines([]);
-    setTodayDoses([]);
+    await resetClientSessionState();
   };
 
   const handleChangeLang = async (nextLang: SupportedLang) => {
@@ -316,6 +319,12 @@ export default function App() {
       setDismissedPopupIds((prev) => ({ ...prev, [dose.id]: true }));
       setPopupDose(null);
       await loadData();
+    } catch {
+      if (Platform.OS !== 'web') {
+        await offlineDb.queueOfflineDoseAction(dose, 'DOSE_CONFIRM', dose.expected_qty);
+      }
+      setDismissedPopupIds((prev) => ({ ...prev, [dose.id]: true }));
+      setPopupDose(null);
     } finally {
       setPopupBusy(false);
     }
@@ -330,6 +339,9 @@ export default function App() {
       setDismissedPopupIds((prev) => ({ ...prev, [dose.id]: true }));
       setPopupDose(null);
       await loadData();
+    } catch {
+      setDismissedPopupIds((prev) => ({ ...prev, [dose.id]: true }));
+      setPopupDose(null);
     } finally {
       setPopupBusy(false);
     }
@@ -345,15 +357,23 @@ export default function App() {
 
   const handleCheckRefills = async () => {
     if (!isOnline) return;
-    const hist = await api.checkRefillAlerts();
-    setNotifications(hist);
+    try {
+      const hist = await api.checkRefillAlerts();
+      setNotifications(hist);
+    } catch {
+      // Ignore transient network errors during manual refill poll.
+    }
   };
 
   const handleDismissNotification = async (id: string) => {
-    await api.updateNotificationStatus(id, 'dismissed');
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, delivery_status: 'dismissed' } : n))
-    );
+    try {
+      await api.updateNotificationStatus(id, 'dismissed');
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, delivery_status: 'dismissed' } : n))
+      );
+    } catch {
+      // Ignore transient network errors when dismissing alert.
+    }
   };
 
   if (booting) {
