@@ -187,6 +187,13 @@ export const api = {
     return request<PersonalMedicineDetail>(`/medicines/${medId}`);
   },
 
+  updateMedicine(medId: string, payload: Record<string, unknown>) {
+    return request<PersonalMedicine>(`/medicines/${medId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
   createSchedule(
     medId: string,
     payload: {

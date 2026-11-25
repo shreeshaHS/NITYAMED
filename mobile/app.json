@@ -20,7 +20,8 @@
       "permissions": [
         "POST_NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "RECORD_AUDIO"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -30,7 +31,8 @@
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-speech-recognition"
     ],
     "extra": {
       "eas": {

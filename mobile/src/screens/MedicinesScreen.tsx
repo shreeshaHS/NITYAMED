@@ -577,6 +577,66 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
                 </Card>
               )}
 
+              {isOnline && (
+                <View className="flex-row gap-2.5 mb-3">
+                  <View className="flex-1">
+                    <PrimaryButton
+                      title={
+                        detailModal.medicine.status === 'active'
+                          ? 'Pause Medicine'
+                          : 'Resume Medicine'
+                      }
+                      variant="outline"
+                      loading={saving}
+                      onPress={async () => {
+                        setSaving(true);
+                        try {
+                          await api.updateMedicine(detailModal.medicine.id, {
+                            status:
+                              detailModal.medicine.status === 'active' ? 'paused' : 'active',
+                          });
+                          setDetailModal(null);
+                          await onRefresh();
+                        } catch (err) {
+                          setErrorMsg(
+                            err instanceof ApiError
+                              ? err.message
+                              : 'Unable to update medicine status.'
+                          );
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                    />
+                  </View>
+                  <View className="flex-1">
+                    <PrimaryButton
+                      title="Mark Completed"
+                      variant="secondary"
+                      loading={saving}
+                      onPress={async () => {
+                        setSaving(true);
+                        try {
+                          await api.updateMedicine(detailModal.medicine.id, {
+                            status: 'completed',
+                          });
+                          setDetailModal(null);
+                          await onRefresh();
+                        } catch (err) {
+                          setErrorMsg(
+                            err instanceof ApiError
+                              ? err.message
+                              : 'Unable to complete medicine.'
+                          );
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
+
               <PrimaryButton title="Close" onPress={() => setDetailModal(null)} />
             </>
           )}

@@ -1,7 +1,11 @@
 /** Elevated Multilingual Hybrid Assistant Screen with NityaMed Avatar & Explicit Confirmation Gates. */
 
 import * as Speech from 'expo-speech';
-import React, { useState } from 'react';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
+import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { Card, FadeSlideIn, LabeledInput, PrimaryButton } from '../components/AccessibleUI';
 import { BrandMark } from '../components/BrandMark';
@@ -50,10 +54,12 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
 
   const [query, setQuery] = useState('');
   const [speakReplies, setSpeakReplies] = useState(true);
+  const [listening, setListening] = useState(false);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<Array<{ user: string; bot: AssistantResponse }>>([]);
   const [pendingConfirm, setPendingConfirm] = useState<AssistantResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const sendLatestRef = useRef<(customText?: string) => Promise<void>>(async () => {});
 
   const speakText = (text: string, replyLang: SupportedLang) => {
     if (!speakReplies) return;
@@ -80,6 +86,80 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
       setErrorMsg(err instanceof Error ? err.message : 'Assistant requires internet connectivity.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    sendLatestRef.current = handleSend;
+  });
+
+  useSpeechRecognitionEvent('start', () => {
+    setListening(true);
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    setListening(false);
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    setListening(false);
+    if (event.error !== 'aborted' && event.error !== 'no-speech') {
+      setErrorMsg(event.message || 'Voice recognition could not complete. Please try again.');
+    }
+  });
+
+  useSpeechRecognitionEvent('result', (event) => {
+    const transcript = event.results?.[0]?.transcript?.trim();
+    if (!transcript) return;
+    setQuery(transcript);
+    if (event.isFinal) {
+      setListening(false);
+      void sendLatestRef.current(transcript);
+    }
+  });
+
+  const handleToggleVoiceInput = async () => {
+    setErrorMsg(null);
+    if (listening) {
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {
+        setListening(false);
+      }
+      return;
+    }
+
+    try {
+      if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
+        setErrorMsg(
+          'Speech recognition is unavailable on this browser/device. Try Chrome/Edge on web or use your keyboard microphone.'
+        );
+        return;
+      }
+
+      try {
+        Speech.stop();
+      } catch {
+        // Ignore TTS stop error.
+      }
+
+      const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!perm.granted) {
+        setErrorMsg('Microphone permission is required for voice input.');
+        return;
+      }
+
+      ExpoSpeechRecognitionModule.start({
+        lang: TTS_LOCALE[lang] || 'en-IN',
+        interimResults: true,
+        maxAlternatives: 1,
+        continuous: false,
+      });
+    } catch (err) {
+      setListening(false);
+      setErrorMsg(
+        err instanceof Error ? err.message : 'Unable to start voice recognition right now.'
+      );
     }
   };
 
@@ -135,6 +215,14 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         <View className="flex-row gap-2.5 mt-1">
           <View className="flex-1">
             <PrimaryButton
+              title={listening ? 'Stop Listening' : 'Speak (Mic)'}
+              variant={listening ? 'danger' : 'primary'}
+              onPress={handleToggleVoiceInput}
+              disabled={!isOnline || loading}
+            />
+          </View>
+          <View className="flex-1">
+            <PrimaryButton
               title={t(lang, 'send')}
               variant="emerald"
               onPress={() => handleSend()}
@@ -142,14 +230,22 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
               disabled={!isOnline}
             />
           </View>
-          <View className="flex-1">
-            <PrimaryButton
-              title={speakReplies ? 'Voice Reply: ON' : 'Voice Reply: OFF'}
-              variant="outline"
-              onPress={() => setSpeakReplies((prev) => !prev)}
-            />
-          </View>
         </View>
+        <View className="mt-2.5">
+          <PrimaryButton
+            title={speakReplies ? 'Voice Reply: ON' : 'Voice Reply: OFF'}
+            variant="outline"
+            onPress={() => setSpeakReplies((prev) => !prev)}
+          />
+        </View>
+
+        {listening && (
+          <View className="bg-red-50 border border-red-200 rounded-2xl p-3 mt-3">
+            <Text className="text-[13.5px] font-bold text-red-700 text-center">
+              Listening in {TTS_LOCALE[lang]}... Speak clearly now.
+            </Text>
+          </View>
+        )}
 
         <Text className="text-[13.5px] font-bold text-ink-muted mt-5 mb-2.5">
           Quick Tap Examples:
