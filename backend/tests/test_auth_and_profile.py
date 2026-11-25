@@ -185,7 +185,19 @@ def test_email_verification_otp_flow_with_enforcement(
     reg_data = reg.json()
     assert reg_data["verification_required"] is True
     assert reg_data["access_token"] is None
-    otp = reg_data["dev_otp_preview"]
+
+    # Re-registering an unverified email refreshes OTP cleanly instead of blocking with 409
+    reg_retry = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "verify@example.com",
+            "password": "StrongPassword123",
+            "display_name": "Verify User Updated",
+            "preferred_lang": "en",
+        },
+    )
+    assert reg_retry.status_code == 201
+    otp = reg_retry.json()["dev_otp_preview"]
     assert otp and len(otp) == 6
 
     # Login before verification must be blocked

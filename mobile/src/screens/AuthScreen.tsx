@@ -79,11 +79,13 @@ export function AuthScreen({
       if (tokens.verification_required || !tokens.access_token || !tokens.refresh_token) {
         setVerifyMode(true);
         setDevOtpHint(tokens.dev_otp_preview || null);
-        setInfoMsg(
-          tokens.email_sent
-            ? 'A 6-digit verification code has been sent to your email.'
-            : 'Enter the 6-digit verification code to activate your account.'
-        );
+        if (tokens.email_sent) {
+          setInfoMsg('A 6-digit verification code has been sent to your email.');
+        } else if (tokens.dev_otp_preview) {
+          setInfoMsg('Enter the 6-digit dev verification code shown below.');
+        } else {
+          setErrorMsg('Unable to deliver verification email right now. Please try Resend.');
+        }
         return;
       }
 

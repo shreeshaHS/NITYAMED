@@ -86,9 +86,22 @@ def _create_and_send_otp(
 
 def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
     """Register a new patient account, initial profile, and send email verification OTP."""
+    settings = get_settings()
     normalized_email = payload.email.strip().lower()
     existing = db.scalar(select(User).where(User.email == normalized_email))
     if existing is not None:
+        if settings.require_email_verification and not existing.is_email_verified and existing.role == "patient":
+            existing.password_hash = hash_password(payload.password)
+            if existing.profile is not None:
+                existing.profile.display_name = payload.display_name.strip()
+                existing.profile.preferred_lang = payload.preferred_lang
+            email_sent, dev_otp = _create_and_send_otp(db, existing)
+            db.commit()
+            return TokenResponse(
+                verification_required=True,
+                email_sent=email_sent,
+                dev_otp_preview=dev_otp,
+            )
         raise AppError(409, "EMAIL_ALREADY_EXISTS", "An account with this email already exists")
 
     user = User(
@@ -108,7 +121,6 @@ def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
     db.add(profile)
 
     email_sent, dev_otp = _create_and_send_otp(db, user)
-    settings = get_settings()
     if settings.require_email_verification:
         db.commit()
         return TokenResponse(
