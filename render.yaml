@@ -24,7 +24,7 @@ services:
       - key: CORS_ORIGINS
         value: https://nityamed-web.onrender.com,http://localhost:8081,http://localhost:8082
       - key: REQUIRE_EMAIL_VERIFICATION
-        value: "false"
+        value: "true"
       - key: EMAIL_WEBHOOK_URL
         sync: false # Optional Google Apps Script HTTPS Gmail relay URL
       - key: EMAIL_WEBHOOK_SECRET

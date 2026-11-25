@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     rxnorm_base_url: str = "https://rxnav.nlm.nih.gov/REST"
     external_med_timeout_sec: float = 5.0
 
-    require_email_verification: bool = False
+    require_email_verification: bool = True
     email_webhook_url: str = ""
     email_webhook_secret: str = ""
     smtp_host: str = ""

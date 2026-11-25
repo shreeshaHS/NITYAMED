@@ -41,6 +41,7 @@ export function AuthScreen({
 
   const [isRegister, setIsRegister] = useState(false);
   const [verifyMode, setVerifyMode] = useState(false);
+  const [verifyFromRegister, setVerifyFromRegister] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [resetRequested, setResetRequested] = useState(false);
   const [email, setEmail] = useState('');
@@ -77,6 +78,7 @@ export function AuthScreen({
         : await api.login({ email: email.trim(), password });
 
       if (tokens.verification_required || !tokens.access_token || !tokens.refresh_token) {
+        setVerifyFromRegister(isRegister);
         setVerifyMode(true);
         setDevOtpHint(tokens.dev_otp_preview || null);
         if (tokens.email_sent) {
@@ -93,6 +95,7 @@ export function AuthScreen({
       await onAuthenticated();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        setVerifyFromRegister(false);
         setVerifyMode(true);
         setErrorMsg(err.message);
       } else {
@@ -105,6 +108,7 @@ export function AuthScreen({
 
   const handleVerifyOtp = async () => {
     setErrorMsg(null);
+    setInfoMsg(null);
     if (!/^\d{6}$/.test(otpCode.trim())) {
       setErrorMsg('Enter the 6-digit numeric verification code.');
       return;
@@ -115,6 +119,16 @@ export function AuthScreen({
         email: email.trim(),
         otp_code: otpCode.trim(),
       });
+      if (verifyFromRegister) {
+        setVerifyMode(false);
+        setVerifyFromRegister(false);
+        setIsRegister(false);
+        setOtpCode('');
+        setPassword('');
+        setDevOtpHint(null);
+        setInfoMsg('Email verified and your account has been created! Please sign in.');
+        return;
+      }
       if (tokens.access_token && tokens.refresh_token) {
         await tokenStore.saveTokens(tokens.access_token, tokens.refresh_token);
         await onAuthenticated();
@@ -317,7 +331,9 @@ export function AuthScreen({
                     Verify Your Email
                   </Text>
                   <Text className="text-[14.5px] text-ink-muted leading-6 mb-4">
-                    Enter the 6-digit verification code sent to {email.trim()}.
+                    {verifyFromRegister
+                      ? `Your account will be created once you enter the 6-digit code sent to ${email.trim()}.`
+                      : `Enter the 6-digit verification code sent to ${email.trim()}.`}
                   </Text>
 
                   {infoMsg && (
@@ -350,7 +366,7 @@ export function AuthScreen({
                   />
 
                   <PrimaryButton
-                    title="Verify & Continue"
+                    title={verifyFromRegister ? 'Verify & Create Account' : 'Verify & Continue'}
                     onPress={handleVerifyOtp}
                     loading={loading}
                     variant="emerald"
