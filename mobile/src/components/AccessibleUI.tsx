@@ -108,9 +108,9 @@ export function FadeSlideIn({
   }, [delay, translateY]);
 
   return (
-    <Animated.View className={className} style={[{ transform: [{ translateY }] }, style]}>
-      {children}
-    </Animated.View>
+    <View className={className} style={style}>
+      <Animated.View style={{ transform: [{ translateY }] }}>{children}</Animated.View>
+    </View>
   );
 }
 

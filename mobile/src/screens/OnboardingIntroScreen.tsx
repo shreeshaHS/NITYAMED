@@ -223,14 +223,15 @@ export function OnboardingIntroScreen({
             }`}
             style={CardShadow}
           >
-            <Animated.View
-              style={{ transform: [{ scale: pulse }] }}
+            <View
               className={`items-center justify-center rounded-[28px] p-6 ${
                 isWide ? 'w-56 h-56' : 'mb-6'
               }`}
             >
-              {renderVisual()}
-            </Animated.View>
+              <Animated.View style={{ transform: [{ scale: pulse }] }}>
+                {renderVisual()}
+              </Animated.View>
+            </View>
 
             <View className={isWide ? 'flex-1' : 'items-center'}>
               <View

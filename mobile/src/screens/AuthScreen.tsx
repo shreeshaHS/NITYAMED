@@ -14,6 +14,7 @@ import { BellIcon, ClockIcon, ShieldIcon } from '../components/Icons';
 import { t } from '../i18n/translations';
 import { api, ApiError } from '../services/api';
 import { tokenStore } from '../services/tokenStore';
+import { Colors } from '../theme';
 import type { SupportedLang } from '../types/api';
 
 interface AuthScreenProps {
@@ -202,12 +203,17 @@ export function AuthScreen({
     >
       <View className={`w-full max-w-5xl self-center ${isWide ? 'flex-row gap-8 items-stretch' : ''}`}>
         {/* Brand Showcase Column (Desktop Left / Mobile Top) */}
-        <FadeSlideIn
-          className={`${
+        <View
+          className={
             isWide
-              ? 'flex-1 bg-brand-dark rounded-[32px] p-8 justify-between'
+              ? 'rounded-[32px] p-8 justify-between'
               : 'items-center mb-5'
-          }`}
+          }
+          style={
+            isWide
+              ? { flex: 1, minWidth: 0, backgroundColor: Colors.primaryDark }
+              : undefined
+          }
         >
           <View className={isWide ? '' : 'items-center'}>
             <View className="flex-row items-center mb-4">
@@ -269,10 +275,13 @@ export function AuthScreen({
               </View>
             </View>
           )}
-        </FadeSlideIn>
+        </View>
 
         {/* Auth Form Card */}
-        <View className={isWide ? 'flex-1 justify-center' : 'w-full'}>
+        <View
+          className={isWide ? 'justify-center' : 'w-full'}
+          style={isWide ? { flex: 1, minWidth: 0 } : undefined}
+        >
           {/* Language Pills */}
           <View className="flex-row justify-center gap-2 mb-4">
             {LANG_OPTIONS.map((opt) => (
@@ -455,7 +464,7 @@ export function AuthScreen({
                           !isRegister ? 'text-brand-dark' : 'text-ink-muted'
                         }`}
                       >
-                        {t(lang, 'login')}
+                        {t(lang, 'signIn')}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -472,7 +481,7 @@ export function AuthScreen({
                           isRegister ? 'text-brand-dark' : 'text-ink-muted'
                         }`}
                       >
-                        {t(lang, 'register')}
+                        {t(lang, 'createAccount')}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -491,7 +500,7 @@ export function AuthScreen({
 
                   {isRegister && (
                     <LabeledInput
-                      label={t(lang, 'name')}
+                      label={t(lang, 'fullName')}
                       value={displayName}
                       onChangeText={setDisplayName}
                       placeholder="e.g. Ramesh Kulkarni"
@@ -529,7 +538,7 @@ export function AuthScreen({
                   )}
 
                   <PrimaryButton
-                    title={isRegister ? t(lang, 'register') : t(lang, 'login')}
+                    title={isRegister ? t(lang, 'createAccount') : t(lang, 'signIn')}
                     onPress={handleSubmit}
                     loading={loading}
                     variant={isRegister ? 'emerald' : 'primary'}
