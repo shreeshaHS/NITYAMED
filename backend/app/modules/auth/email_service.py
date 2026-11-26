@@ -32,7 +32,7 @@ def _send_via_webhook(
             webhook_url,
             json={"secret": secret, "to": to_email, "subject": subject, "body": body},
             follow_redirects=True,
-            timeout=12.0,
+            timeout=8.0,
         )
         resp.raise_for_status()
         try:
@@ -70,18 +70,18 @@ def send_email_detailed(to_email: str, subject: str, body: str) -> tuple[bool, s
     try:
         connect_host = _resolve_ipv4_host(settings.smtp_host, settings.smtp_port)
         if settings.smtp_port == 465:
-            with smtplib.SMTP_SSL(connect_host, settings.smtp_port, timeout=10) as server:
+            with smtplib.SMTP_SSL(connect_host, settings.smtp_port, timeout=4) as server:
                 server.login(settings.smtp_user, settings.smtp_password)
                 server.send_message(msg)
         else:
-            with smtplib.SMTP(connect_host, settings.smtp_port, timeout=10) as server:
+            with smtplib.SMTP(connect_host, settings.smtp_port, timeout=4) as server:
                 server.starttls()
                 server.login(settings.smtp_user, settings.smtp_password)
                 server.send_message(msg)
         return True, f"SMTP email sent successfully to {to_email}."
     except Exception as exc:
         logger.warning("SMTP delivery failed to %s: %s", to_email, exc)
-        return False, f"SMTP delivery error: {exc}"
+        return False, f"SMTP delivery error ({exc}). Configure EMAIL_WEBHOOK_URL if cloud SMTP is blocked."
 
 
 def is_email_transport_configured() -> bool:

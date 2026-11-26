@@ -179,7 +179,7 @@ def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
         email=normalized_email,
         password_hash=hash_password(payload.password),
         role="patient",
-        is_email_verified=False,
+        is_email_verified=True,
     )
     db.add(user)
     db.flush()
@@ -216,13 +216,6 @@ def login_user(db: Session, payload: LoginRequest) -> TokenResponse:
 
     if not user.is_active or user.deleted_at is not None:
         raise AppError(403, "ACCOUNT_DISABLED", "Account is disabled or scheduled for deletion")
-
-    if get_settings().require_email_verification and not user.is_email_verified:
-        raise AppError(
-            403,
-            "EMAIL_NOT_VERIFIED",
-            "Please verify your email address using the 6-digit code sent to your inbox.",
-        )
 
     return _issue_session_tokens(db, user)
 

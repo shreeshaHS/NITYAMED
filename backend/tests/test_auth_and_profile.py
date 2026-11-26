@@ -248,6 +248,28 @@ def test_email_verification_otp_flow_with_enforcement(
     assert me.status_code == 200
     assert me.json()["is_email_verified"] is True
 
+    # Account created while verification was disabled can still Sign In cleanly without OTP later
+    monkeypatch.setattr(settings, "require_email_verification", False)
+    legacy_reg = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "legacy_no_otp@example.com",
+            "password": "StrongPassword123",
+            "display_name": "Legacy User",
+            "preferred_lang": "en",
+        },
+    )
+    assert legacy_reg.status_code == 201
+    assert legacy_reg.json()["verification_required"] is False
+
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    legacy_login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "legacy_no_otp@example.com", "password": "StrongPassword123"},
+    )
+    assert legacy_login.status_code == 200
+    assert legacy_login.json()["access_token"] is not None
+
 
 def test_register_aborts_when_email_delivery_fails(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch

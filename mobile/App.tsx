@@ -117,30 +117,31 @@ export default function App() {
           setPendingSyncCount(await offlineDb.getPendingOutboxCount());
         }
 
-        const [prof, boot, inv, ref, rep, notifHist] = await Promise.all([
+        // Priority 1: Load only what Today & Medicines need so the UI appears immediately.
+        const [prof, daily, activeMeds] = await Promise.all([
           api.getProfile(),
-          api.syncBootstrap(),
-          api.getInventorySummary(14),
-          api.getRefillPredictions(),
-          api.getAdherenceReport(30),
-          api.getNotificationHistory(30).catch(() => [] as NotificationItem[]),
+          api.getDailyDoses(targetDate),
+          api.listMedicines('active'),
         ]);
 
         setProfile(prof);
         setLang(prof.preferred_lang);
-        setMedicines(boot.medicines);
-        setInventory(inv);
-        setRefills(ref);
-        setReport(rep);
-        setNotifications(notifHist);
-
-        const daily = await api.getDailyDoses(targetDate);
         setTodayDoses(daily);
+        setMedicines(activeMeds);
 
-        if (Platform.OS !== 'web') {
-          await offlineDb.hydrateFromBootstrap(boot);
-          await rescheduleLocalDoseAlarms(boot.dose_events, prof.lockscreen_privacy);
-        }
+        // Priority 2: Load secondary tabs & offline cache in the background without blocking UI.
+        void Promise.all([
+          api.getInventorySummary(14).then(setInventory).catch(() => undefined),
+          api.getRefillPredictions().then(setRefills).catch(() => undefined),
+          api.getAdherenceReport(30).then(setReport).catch(() => undefined),
+          api.getNotificationHistory(30).then(setNotifications).catch(() => undefined),
+          Platform.OS !== 'web'
+            ? api.syncBootstrap().then(async (boot) => {
+                await offlineDb.hydrateFromBootstrap(boot);
+                await rescheduleLocalDoseAlarms(boot.dose_events, prof.lockscreen_privacy);
+              }).catch(() => undefined)
+            : Promise.resolve(),
+        ]);
         return;
       } catch {
         // Fall through to offline SQLite cache on transient error.
@@ -158,6 +159,24 @@ export default function App() {
       setPendingSyncCount(cnt);
     }
   }, [isOnline, selectedDate]);
+
+  const refreshTodayQuick = useCallback(async () => {
+    if (!isOnline) {
+      await loadData();
+      return;
+    }
+    try {
+      const daily = await api.getDailyDoses(selectedDate);
+      setTodayDoses(daily);
+      void Promise.all([
+        api.getInventorySummary(14).then(setInventory).catch(() => undefined),
+        api.getRefillPredictions().then(setRefills).catch(() => undefined),
+        api.getAdherenceReport(30).then(setReport).catch(() => undefined),
+      ]);
+    } catch {
+      await loadData();
+    }
+  }, [isOnline, selectedDate, loadData]);
 
   const handleSelectDate = useCallback(
     async (nextDate: string) => {
@@ -522,7 +541,7 @@ export default function App() {
             onSelectDate={handleSelectDate}
             isOnline={isOnline}
             pendingSyncCount={pendingSyncCount}
-            onRefresh={() => loadData()}
+            onRefresh={refreshTodayQuick}
             onSyncNow={() => loadData(true)}
           />
         );

@@ -214,18 +214,47 @@ def ensure_rolling_horizon_for_medicine(
 
 
 def ensure_rolling_horizon_for_user(
-    db: Session, user_id: UUID, target_date: date | None = None
+    db: Session, user_id: UUID, target_date: date | None = None, horizon_days: int = 14
 ) -> int:
-    """Extend rolling dose horizons for all active medicines owned by user_id."""
-    meds = db.scalars(
-        select(PersonalMedicine).where(
+    """Extend rolling dose horizons for all active medicines owned by user_id in minimal queries."""
+    from sqlalchemy import func
+
+    tz_name, _, _ = _get_user_profile_settings(db, user_id)
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(UTC)
+    today_local = now.astimezone(tz).date()
+    desired_end = max(target_date or today_local, today_local + timedelta(days=horizon_days - 1))
+
+    rows = db.execute(
+        select(PersonalMedicine, ScheduleVersion)
+        .join(ScheduleVersion, ScheduleVersion.personal_med_id == PersonalMedicine.id)
+        .where(
             PersonalMedicine.user_id == user_id,
             PersonalMedicine.status == "active",
+            ScheduleVersion.effective_to.is_(None),
+            ScheduleVersion.is_prn.is_(False),
         )
     ).all()
+    if not rows:
+        return 0
+
+    sched_ids = [sched.id for _, sched in rows]
+    max_rows = db.execute(
+        select(DoseEvent.schedule_version_id, func.max(DoseEvent.scheduled_at))
+        .where(DoseEvent.schedule_version_id.in_(sched_ids))
+        .group_by(DoseEvent.schedule_version_id)
+    ).all()
+    max_by_sched = {sid: _as_utc(ts) for sid, ts in max_rows if ts is not None}
+
     added = 0
-    for med in meds:
-        added += ensure_rolling_horizon_for_medicine(db, med, target_date=target_date)
+    for med, sched in rows:
+        end_date = min(desired_end, sched.end_date) if sched.end_date else desired_end
+        if end_date < max(today_local, sched.start_date):
+            continue
+        max_existing = max_by_sched.get(sched.id)
+        if max_existing is not None and max_existing.astimezone(tz).date() >= end_date:
+            continue
+        added += ensure_rolling_horizon_for_medicine(db, med, target_date=target_date, horizon_days=horizon_days)
     if added > 0:
         db.commit()
     return added
@@ -248,11 +277,27 @@ def expire_overdue_doses(
     db: Session, user_id: UUID | None = None, now: datetime | None = None
 ) -> int:
     """Transition past-cutoff unanswered doses to 'expired_unconfirmed' (never taken/missed)."""
-    current = now or datetime.now(UTC)
-    stmt = select(DoseEvent).where(DoseEvent.status.in_(("pending", "snoozed")))
-    if user_id is not None:
-        stmt = stmt.where(DoseEvent.user_id == user_id)
+    from sqlalchemy import update
 
+    current = now or datetime.now(UTC)
+    if user_id is not None:
+        _, _, cutoff_hours = _get_user_profile_settings(db, user_id)
+        cutoff_before = current - timedelta(hours=cutoff_hours)
+        res = db.execute(
+            update(DoseEvent)
+            .where(
+                DoseEvent.user_id == user_id,
+                DoseEvent.status.in_(("pending", "snoozed")),
+                DoseEvent.scheduled_at <= cutoff_before,
+            )
+            .values(status="expired_unconfirmed")
+        )
+        expired_count = int(res.rowcount or 0)
+        if expired_count > 0:
+            db.commit()
+        return expired_count
+
+    stmt = select(DoseEvent).where(DoseEvent.status.in_(("pending", "snoozed")))
     candidates = db.scalars(stmt).all()
     cutoff_cache: dict[UUID, int] = {}
     expired_count = 0

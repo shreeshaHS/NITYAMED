@@ -95,9 +95,21 @@ export function AuthScreen({
       await onAuthenticated();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
-        setVerifyFromRegister(false);
+        setVerifyFromRegister(true);
         setVerifyMode(true);
-        setErrorMsg(err.message);
+        try {
+          const resent = await api.resendVerification(email.trim());
+          setDevOtpHint(resent.dev_otp_preview || null);
+          if (resent.email_sent) {
+            setInfoMsg('Your new account verification was not finished yet. A fresh 6-digit code has been sent to your email.');
+          } else if (resent.dev_otp_preview) {
+            setInfoMsg('Account setup not finished yet. Enter the 6-digit dev code shown below.');
+          } else {
+            setErrorMsg('Account creation is pending verification, but email delivery failed. Please tap Resend.');
+          }
+        } catch (resendErr) {
+          setErrorMsg(resendErr instanceof ApiError ? resendErr.message : err.message);
+        }
       } else {
         setErrorMsg(err instanceof ApiError ? err.message : 'Unable to reach server. Check connection.');
       }
@@ -173,6 +185,10 @@ export function AuthScreen({
     setLoading(true);
     try {
       const res = await api.forgotPassword(email.trim());
+      if (!res.email_sent && !res.dev_otp_preview) {
+        setErrorMsg('Unable to deliver reset email right now. Check server email settings and try again.');
+        return;
+      }
       setResetRequested(true);
       setDevOtpHint(res.dev_otp_preview || null);
       setInfoMsg(res.message);
