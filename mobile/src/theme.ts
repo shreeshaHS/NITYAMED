@@ -52,8 +52,16 @@ export const Spacing = {
 
 export const CardShadow = {
   shadowColor: '#0F172A',
-  shadowOffset: { width: 0, height: 6 },
-  shadowOpacity: 0.05,
-  shadowRadius: 16,
-  elevation: 2,
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.06,
+  shadowRadius: 20,
+  elevation: 3,
+};
+
+export const FloatingShadow = {
+  shadowColor: '#063737',
+  shadowOffset: { width: 0, height: 10 },
+  shadowOpacity: 0.14,
+  shadowRadius: 24,
+  elevation: 6,
 };

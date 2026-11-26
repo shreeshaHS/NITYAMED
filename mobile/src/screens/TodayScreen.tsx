@@ -13,17 +13,18 @@ import {
 import {
   AnimatedProgressBar,
   Card,
+  CircularProgressRing,
   EmptyState,
   FadeSlideIn,
   FormIconBadge,
   PrimaryButton,
   StatusBadge,
 } from '../components/AccessibleUI';
-import { ClockIcon } from '../components/Icons';
+import { BellIcon, CheckIcon, ClockIcon } from '../components/Icons';
 import { t } from '../i18n/translations';
 import { api } from '../services/api';
 import { offlineDb } from '../services/offlineDb';
-import { CardShadow, Colors } from '../theme';
+import { CardShadow, Colors, FloatingShadow } from '../theme';
 import type { DailyDoseItem, DoseStatus, SupportedLang } from '../types/api';
 import { getLocalDateString } from '../utils/date';
 import { generateUuid } from '../utils/uuid';
@@ -38,6 +39,7 @@ interface TodayScreenProps {
   pendingSyncCount: number;
   onRefresh: () => Promise<void>;
   onSyncNow: () => Promise<void>;
+  onToast?: (msg: string, tone?: 'success' | 'info' | 'error') => void;
 }
 
 function shiftLocalDate(offsetDays: number): string {
@@ -86,10 +88,12 @@ export function TodayScreen({
   pendingSyncCount,
   onRefresh,
   onSyncNow,
+  onToast,
 }: TodayScreenProps) {
   const { width } = useWindowDimensions();
   const twoCol = width >= 900;
 
+  const [doseFilter, setDoseFilter] = useState<'all' | 'due' | 'done'>('all');
   const [partialTargetId, setPartialTargetId] = useState<string | null>(null);
   const [partialQty, setPartialQty] = useState('');
   const [correctTargetId, setCorrectTargetId] = useState<string | null>(null);
@@ -103,11 +107,24 @@ export function TodayScreen({
       d.status === 'taken_late' ||
       d.status === 'partially_taken'
   ).length;
-  const pendingCount = doses.filter(
-    (d) => d.status === 'pending' || d.status === 'snoozed'
-  ).length;
+  const dueDoses = doses.filter((d) => d.status === 'pending' || d.status === 'snoozed');
+  const pendingCount = dueDoses.length;
   const totalCount = doses.length;
   const progress = totalCount > 0 ? takenCount / totalCount : 0;
+  const nextDue = dueDoses[0] || null;
+  const lowStockMeds = Array.from(
+    new Map(
+      doses
+        .filter((d) => Number(d.confirmed_stock) <= Number(d.expected_qty) * 3)
+        .map((d) => [d.personal_med_id, d])
+    ).values()
+  );
+
+  const visibleDoses = doses.filter((d) => {
+    if (doseFilter === 'due') return d.status === 'pending' || d.status === 'snoozed' || d.status === 'expired_unconfirmed';
+    if (doseFilter === 'done') return d.status === 'taken_on_time' || d.status === 'taken_late' || d.status === 'partially_taken' || d.status === 'explicitly_skipped';
+    return true;
+  });
 
   const handleConfirm = async (dose: DailyDoseItem, qty: string) => {
     setBusyId(dose.id);
@@ -122,10 +139,12 @@ export function TodayScreen({
       }
       setPartialTargetId(null);
       setPartialQty('');
+      onToast?.(`Confirmed ${dose.display_name} (${qty} ${dose.dose_unit})`, 'success');
       await onRefresh();
     } catch (err) {
       if (Platform.OS !== 'web') {
         await offlineDb.queueOfflineDoseAction(dose, 'DOSE_CONFIRM', qty);
+        onToast?.(`Saved offline: ${dose.display_name}`, 'info');
         await onRefresh();
       } else {
         setFeedback(err instanceof Error ? err.message : 'Unable to confirm dose');
@@ -146,10 +165,12 @@ export function TodayScreen({
       } else {
         throw new Error('Offline dose skip requires the Android app.');
       }
+      onToast?.(`Marked ${dose.display_name} skipped`, 'info');
       await onRefresh();
     } catch (err) {
       if (Platform.OS !== 'web') {
         await offlineDb.queueOfflineDoseAction(dose, 'DOSE_SKIP');
+        onToast?.(`Skip saved offline: ${dose.display_name}`, 'info');
         await onRefresh();
       } else {
         setFeedback(err instanceof Error ? err.message : 'Unable to skip dose.');
@@ -165,6 +186,7 @@ export function TodayScreen({
     try {
       if (isOnline) {
         await api.snoozeDose(dose.id, 15);
+        onToast?.(`Snoozed ${dose.display_name} by 15 min`, 'info');
         await onRefresh();
       } else {
         setFeedback('Snooze saved locally; alarm will remind you shortly.');
@@ -202,57 +224,73 @@ export function TodayScreen({
         </View>
       )}
 
-      {/* Hero Continuity Banner */}
+      {/* Elevated Hero Continuity Card with Animated Circular Ring & Up-Next Banner */}
       <FadeSlideIn>
         <View
-          className="bg-brand-dark rounded-[28px] p-6 mb-4"
-          style={CardShadow}
+          className="bg-brand-dark rounded-[30px] p-6 mb-4"
+          style={FloatingShadow}
         >
-          <View className="flex-row items-start justify-between mb-4">
-            <View className="flex-1 pr-3">
-              <Text className="text-[12.5px] font-bold text-emerald-300 uppercase tracking-wider mb-1">
+          <View className="flex-row items-center justify-between gap-4">
+            <View className="flex-1">
+              <Text className="text-[12px] font-bold text-emerald-300 uppercase tracking-wider mb-1">
                 {new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, {
                   weekday: 'long',
                   month: 'short',
                   day: 'numeric',
                 })}
               </Text>
-              <Text className="text-[26px] font-extrabold text-white tracking-tight">
+              <Text className="text-[25px] font-extrabold text-white tracking-tight">
                 {displayName ? `Hello, ${displayName}` : t(lang, 'todayDoses')}
               </Text>
+              <Text className="text-[14px] font-semibold text-teal-100 mt-1.5">
+                {totalCount === 0
+                  ? t(lang, 'noDosesToday')
+                  : `${takenCount} of ${totalCount} doses confirmed`}
+              </Text>
+
+              {nextDue && (
+                <View className="mt-3 bg-white/12 border border-white/20 rounded-2xl px-3.5 py-2 self-start flex-row items-center gap-2">
+                  <ClockIcon size={14} color="#6EE7B7" />
+                  <Text className="text-[12.5px] font-bold text-white" numberOfLines={1}>
+                    Up Next: {nextDue.display_name} •{' '}
+                    {new Date(nextDue.scheduled_at).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+              )}
             </View>
 
-            <View className="bg-white/15 border border-white/20 px-4 py-2 rounded-2xl items-center">
-              <Text className="text-[20px] font-extrabold text-white">
-                {takenCount}/{totalCount}
-              </Text>
-              <Text className="text-[11px] font-semibold text-emerald-200">
-                {t(lang, 'confirmedLabel')}
-              </Text>
-            </View>
+            <CircularProgressRing
+              progress={progress}
+              size={92}
+              strokeWidth={9}
+              centerLabel={totalCount > 0 ? `${Math.round(progress * 100)}%` : '0%'}
+              centerSublabel={`${takenCount}/${totalCount}`}
+            />
           </View>
 
-          <AnimatedProgressBar progress={progress} height={11} />
-
-          <View className="flex-row items-center justify-between mt-3">
-            <Text className="text-[14.5px] font-semibold text-teal-50">
-              {totalCount === 0
-                ? t(lang, 'noDosesToday')
-                : `${takenCount} of ${totalCount} scheduled doses confirmed`}
-            </Text>
-            {pendingCount > 0 && (
-              <View className="bg-emerald-400/20 px-3 py-1 rounded-full">
-                <Text className="text-[12.5px] font-bold text-emerald-200">
-                  {pendingCount} due
-                </Text>
-              </View>
-            )}
+          <View className="mt-4">
+            <AnimatedProgressBar progress={progress} height={8} />
           </View>
         </View>
       </FadeSlideIn>
 
-      {/* Yesterday / Today / Tomorrow Switcher */}
-      <View className="flex-row gap-2 mb-4">
+      {/* Low Stock Quick Alert Strip */}
+      {lowStockMeds.length > 0 && (
+        <FadeSlideIn delay={40}>
+          <View className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-4 flex-row items-center gap-2.5">
+            <BellIcon size={17} color="#B45309" />
+            <Text className="text-[13.5px] font-bold text-amber-900 flex-1">
+              Low stock: {lowStockMeds.map((m) => `${m.display_name} (${m.confirmed_stock} ${m.dose_unit})`).join(', ')}
+            </Text>
+          </View>
+        </FadeSlideIn>
+      )}
+
+      {/* Yesterday / Today / Tomorrow Switcher + Quick Status Filter */}
+      <View className="flex-row gap-2 mb-3">
         {(
           [
             { dateStr: shiftLocalDate(-1), label: t(lang, 'yesterdayLabel') },
@@ -268,6 +306,7 @@ export function TodayScreen({
               className={`flex-1 py-2.5 px-3 rounded-2xl border items-center ${
                 active ? 'bg-brand border-brand' : 'bg-white border-slate-200'
               }`}
+              style={active ? CardShadow : undefined}
             >
               <Text
                 className={`text-[13.5px] font-bold ${
@@ -280,6 +319,36 @@ export function TodayScreen({
           );
         })}
       </View>
+
+      {doses.length > 0 && (
+        <View className="flex-row gap-2 mb-4">
+          {(
+            [
+              { key: 'all', label: `All (${totalCount})` },
+              { key: 'due', label: `Due (${pendingCount})` },
+              { key: 'done', label: `Done (${takenCount})` },
+            ] as const
+          ).map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              onPress={() => setDoseFilter(f.key)}
+              className={`px-3.5 py-1.5 rounded-full border ${
+                doseFilter === f.key
+                  ? 'bg-brand-soft border-brand'
+                  : 'bg-white border-slate-200'
+              }`}
+            >
+              <Text
+                className={`text-[12.5px] font-bold ${
+                  doseFilter === f.key ? 'text-brand-dark' : 'text-ink-muted'
+                }`}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {pendingSyncCount > 0 && (
         <FadeSlideIn delay={60}>
@@ -302,16 +371,20 @@ export function TodayScreen({
         </View>
       )}
 
-      {doses.length === 0 ? (
+      {visibleDoses.length === 0 ? (
         <FadeSlideIn delay={100}>
           <EmptyState
-            title="All Clear for Today"
-            subtitle={`${t(lang, 'noDosesToday')} Open Medicines to search the catalogue or add your daily schedule.`}
+            title={doses.length === 0 ? 'All Clear for Today' : 'Nothing in This Filter'}
+            subtitle={
+              doses.length === 0
+                ? `${t(lang, 'noDosesToday')} Open Medicines to search the catalogue or add your daily schedule.`
+                : 'Switch filter above to view all scheduled doses for this date.'
+            }
           />
         </FadeSlideIn>
       ) : (
         <View className={twoCol ? 'flex-row flex-wrap -mx-2' : ''}>
-          {doses.map((dose, idx) => {
+          {visibleDoses.map((dose, idx) => {
             const timeStr = new Date(dose.scheduled_at).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',
@@ -380,6 +453,7 @@ export function TodayScreen({
                           <PrimaryButton
                             title={t(lang, 'taken')}
                             variant="emerald"
+                            icon={<CheckIcon size={16} color="#FFFFFF" />}
                             loading={busyId === dose.id}
                             onPress={() => handleConfirm(dose, dose.expected_qty)}
                           />

@@ -1,11 +1,17 @@
-/** Elevated Adherence Analytics & Non-Diagnostic Pattern Summary Screen. */
+/** Visual Adherence Analytics Screen with Animated Progress Ring & Outcome Distribution Bars. */
 
 import React from 'react';
 import { ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import { Card, EmptyState, FadeSlideIn } from '../components/AccessibleUI';
+import {
+  AnimatedProgressBar,
+  Card,
+  CircularProgressRing,
+  EmptyState,
+  FadeSlideIn,
+} from '../components/AccessibleUI';
 import { ChartIcon } from '../components/Icons';
 import { t } from '../i18n/translations';
-import { Colors } from '../theme';
+import { Colors, FloatingShadow } from '../theme';
 import type { AdherenceReport, SupportedLang } from '../types/api';
 
 interface ReportsScreenProps {
@@ -31,51 +37,88 @@ export function ReportsScreen({ lang, report }: ReportsScreenProps) {
     );
   }
 
+  const adherencePct = report.confirmed_adherence_rate ?? 0;
+  const totalClosed = Math.max(1, report.closed_scheduled_count);
+  const breakdownRows = [
+    { label: 'On Time', count: report.taken_on_time, color: Colors.emerald },
+    { label: 'Taken Late', count: report.taken_late, color: '#D97706' },
+    { label: 'Partial', count: report.partially_taken, color: '#0284C7' },
+    { label: 'Skipped', count: report.explicitly_skipped, color: '#64748B' },
+    { label: 'Expired Unconfirmed', count: report.expired_unconfirmed, color: Colors.danger },
+  ];
+
   return (
     <ScrollView className="flex-1" contentContainerStyle={{ padding: 20, paddingBottom: 48 }}>
       <View className="flex-row items-center mb-4">
         <View className="w-11 h-11 rounded-2xl bg-brand-soft items-center justify-center mr-3">
           <ChartIcon size={22} color={Colors.primary} />
         </View>
-        <Text className="text-[26px] font-extrabold text-ink tracking-tight">
-          {t(lang, 'adherenceReport')}
-        </Text>
+        <View>
+          <Text className="text-[25px] font-extrabold text-ink tracking-tight">
+            {t(lang, 'adherenceReport')}
+          </Text>
+          <Text className="text-[12.5px] font-medium text-ink-muted">
+            {report.window_days}-day continuity breakdown ({report.closed_scheduled_count} closed doses)
+          </Text>
+        </View>
       </View>
 
+      {/* Hero Ring + KPI Trio */}
       <FadeSlideIn>
-        <Card>
-          <View className="flex-row gap-3 flex-wrap">
-            <View className="flex-1 min-w-[140px] bg-brand-soft/60 border border-brand/15 rounded-2xl p-4">
-              <Text className="text-[12.5px] font-semibold text-brand-dark">Confirmed Adherence</Text>
-              <Text className="text-[26px] font-extrabold text-brand-dark mt-1">
+        <View className="bg-brand-dark rounded-[28px] p-6 mb-4" style={FloatingShadow}>
+          <View className="flex-row items-center justify-between gap-4">
+            <View className="flex-1">
+              <Text className="text-[12px] font-bold uppercase tracking-wider text-emerald-300">
+                Confirmed Adherence
+              </Text>
+              <Text className="text-[32px] font-extrabold text-white mt-0.5">
                 {report.confirmed_adherence_rate !== null
                   ? `${report.confirmed_adherence_rate}%`
                   : '—'}
               </Text>
-            </View>
-            <View className="flex-1 min-w-[140px] bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
-              <Text className="text-[12.5px] font-semibold text-emerald-800">On-Time Rate</Text>
-              <Text className="text-[26px] font-extrabold text-emerald-700 mt-1">
-                {report.on_time_rate !== null ? `${report.on_time_rate}%` : '—'}
-              </Text>
-            </View>
-            <View className="flex-1 min-w-[140px] bg-red-50 border border-red-200 rounded-2xl p-4">
-              <Text className="text-[12.5px] font-semibold text-red-800">Unconfirmed Rate</Text>
-              <Text className="text-[26px] font-extrabold text-red-700 mt-1">
+              <Text className="text-[13.5px] text-teal-100 mt-1">
+                On-Time: {report.on_time_rate !== null ? `${report.on_time_rate}%` : '—'} •
+                Unconfirmed:{' '}
                 {report.unconfirmed_rate !== null ? `${report.unconfirmed_rate}%` : '—'}
               </Text>
             </View>
+            <CircularProgressRing
+              progress={adherencePct / 100}
+              size={92}
+              strokeWidth={9}
+              centerLabel={report.confirmed_adherence_rate !== null ? `${Math.round(adherencePct)}%` : '—'}
+              centerSublabel="confirmed"
+            />
           </View>
+        </View>
+      </FadeSlideIn>
 
-          <View className="bg-slate-50 rounded-2xl p-3.5 mt-4 border border-slate-100">
-            <Text className="text-[14.5px] font-medium text-ink">
-              On Time: {report.taken_on_time} • Late: {report.taken_late} • Partial:{' '}
-              {report.partially_taken}
-            </Text>
-            <Text className="text-[14.5px] font-medium text-ink-muted mt-1">
-              Explicitly Skipped: {report.explicitly_skipped} • Expired Unconfirmed:{' '}
-              {report.expired_unconfirmed}
-            </Text>
+      {/* Outcome Distribution Bar Chart */}
+      <FadeSlideIn delay={50}>
+        <Card>
+          <Text className="text-[17px] font-extrabold text-ink mb-3">
+            Dose Outcome Distribution
+          </Text>
+          <View className="gap-3">
+            {breakdownRows.map((row) => {
+              const ratio = report.closed_scheduled_count > 0 ? row.count / totalClosed : 0;
+              return (
+                <View key={row.label}>
+                  <View className="flex-row items-center justify-between mb-1">
+                    <Text className="text-[13.5px] font-semibold text-ink">{row.label}</Text>
+                    <Text className="text-[13.5px] font-extrabold text-ink-muted">
+                      {row.count} ({Math.round(ratio * 100)}%)
+                    </Text>
+                  </View>
+                  <AnimatedProgressBar
+                    progress={ratio}
+                    height={9}
+                    trackColor="#F1F5F9"
+                    fillColor={row.color}
+                  />
+                </View>
+              );
+            })}
           </View>
         </Card>
       </FadeSlideIn>
@@ -95,22 +138,39 @@ export function ReportsScreen({ lang, report }: ReportsScreenProps) {
 
       <Text className="text-[20px] font-extrabold text-ink mb-3 mt-1">By Medicine</Text>
       <View className={twoCol ? 'flex-row flex-wrap -mx-2' : ''}>
-        {report.per_medicine.map((m) => (
-          <View key={m.personal_med_id} className={twoCol ? 'w-1/2 px-2' : 'w-full'}>
-            <Card accentColor={Colors.primary}>
-              <Text className="text-[17.5px] font-extrabold text-ink">{m.display_name}</Text>
-              <Text className="text-[15px] font-bold text-brand-dark mt-1">
-                Confirmed:{' '}
-                {m.confirmed_adherence_rate !== null ? `${m.confirmed_adherence_rate}%` : '—'} (
-                {m.closed_scheduled_count} closed)
-              </Text>
-              <Text className="text-[13px] text-ink-muted mt-1.5">
-                On Time {m.taken_on_time} | Late {m.taken_late} | Skipped {m.explicitly_skipped} |
-                Unconfirmed {m.expired_unconfirmed}
-              </Text>
-            </Card>
-          </View>
-        ))}
+        {report.per_medicine.map((m, idx) => {
+          const medPct = m.confirmed_adherence_rate ?? 0;
+          return (
+            <FadeSlideIn
+              key={m.personal_med_id}
+              delay={Math.min(idx * 45, 180)}
+              className={twoCol ? 'w-1/2 px-2' : 'w-full'}
+            >
+              <Card accentColor={medPct >= 80 ? Colors.emerald : Colors.primary}>
+                <View className="flex-row items-center justify-between mb-2">
+                  <Text className="text-[17.5px] font-extrabold text-ink flex-1 pr-2">
+                    {m.display_name}
+                  </Text>
+                  <View className="bg-brand-soft px-3 py-1 rounded-full">
+                    <Text className="text-[13px] font-extrabold text-brand-dark">
+                      {m.confirmed_adherence_rate !== null ? `${m.confirmed_adherence_rate}%` : '—'}
+                    </Text>
+                  </View>
+                </View>
+                <AnimatedProgressBar
+                  progress={medPct / 100}
+                  height={8}
+                  trackColor="#F1F5F9"
+                  fillColor={medPct >= 80 ? Colors.emerald : '#D97706'}
+                />
+                <Text className="text-[12.5px] text-ink-muted mt-2.5">
+                  On Time {m.taken_on_time} • Late {m.taken_late} • Skipped {m.explicitly_skipped} •
+                  Unconfirmed {m.expired_unconfirmed}
+                </Text>
+              </Card>
+            </FadeSlideIn>
+          );
+        })}
       </View>
 
       <Card className="bg-slate-50">

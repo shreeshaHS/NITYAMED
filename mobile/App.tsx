@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { BrandMark } from './src/components/BrandMark';
+import { ToastBanner } from './src/components/AccessibleUI';
 import {
   BellIcon,
   CalendarIcon,
@@ -91,6 +92,15 @@ export default function App() {
   const [popupDose, setPopupDose] = useState<DailyDoseItem | null>(null);
   const [dismissedPopupIds, setDismissedPopupIds] = useState<Record<string, boolean>>({});
   const [popupBusy, setPopupBusy] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; tone: 'success' | 'info' | 'error' } | null>(
+    null
+  );
+  const showToast = useCallback((msg: string, tone: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ msg, tone });
+    setTimeout(() => {
+      setToast((prev) => (prev?.msg === msg ? null : prev));
+    }, 2600);
+  }, []);
   const [webNotifPerm, setWebNotifPerm] = useState<'granted' | 'denied' | 'default' | 'unsupported'>(
     () => getWebNotificationPermission()
   );
@@ -543,6 +553,7 @@ export default function App() {
             pendingSyncCount={pendingSyncCount}
             onRefresh={refreshTodayQuick}
             onSyncNow={() => loadData(true)}
+            onToast={showToast}
           />
         );
       case 'medicines':
@@ -593,6 +604,7 @@ export default function App() {
   return (
     <SafeAreaView className="flex-1 bg-surface-canvas">
       <StatusBar style="dark" />
+      <ToastBanner message={toast?.msg ?? null} tone={toast?.tone ?? 'success'} />
 
       <View className="flex-1 flex-row">
         {isWide && (
@@ -736,7 +748,7 @@ export default function App() {
 
       {/* Mobile Bottom Tab Bar */}
       {!isWide && (
-        <View className="flex-row bg-white border-t border-slate-200 px-1.5 py-1.5">
+        <View className="flex-row bg-white border-t border-slate-200 px-1.5 py-2">
           {tabs.map((tab) => {
             const active = activeTab === tab.key;
             return (
@@ -756,6 +768,7 @@ export default function App() {
                 >
                   {tab.label}
                 </Text>
+                {active && <View className="w-4 h-1 rounded-full bg-brand mt-0.5" />}
               </TouchableOpacity>
             );
           })}

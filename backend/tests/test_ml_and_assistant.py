@@ -453,11 +453,12 @@ def test_conversational_assistant_company_slot_fill_and_voice_skip_snooze(
     snz = client.post(
         "/api/v1/assistant/text",
         headers=headers,
-        json={"text": "snooze my dolo reminder for 15 minutes"},
+        json={"text": "snooze my dolo reminder for 10 minutes"},
     )
     assert snz.status_code == 200
     assert snz.json()["intent"] == "snooze_dose"
-    assert "Snoozed" in snz.json()["reply_text"]
+    assert "10 minutes" in snz.json()["reply_text"]
+    assert isinstance(snz.json()["suggested_replies"], list) and len(snz.json()["suggested_replies"]) > 0
 
     skp = client.post(
         "/api/v1/assistant/text",
@@ -472,3 +473,13 @@ def test_conversational_assistant_company_slot_fill_and_voice_skip_snooze(
     assert skp_yes.status_code == 200
     assert skp_yes.json()["intent"] == "skip_dose"
     assert "skipped" in skp_yes.json()["reply_text"].lower()
+
+    # Catalogue fallback for verified medicine info even before adding to personal list
+    cat_info = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "what is metformin used for"},
+    )
+    assert cat_info.status_code == 200
+    assert cat_info.json()["intent"] == "medicine_info"
+    assert "Glycomet" in cat_info.json()["reply_text"] or "Metformin" in cat_info.json()["reply_text"]

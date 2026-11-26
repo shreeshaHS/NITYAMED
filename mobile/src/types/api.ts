@@ -198,6 +198,7 @@ export interface AssistantResponse {
   confirmation_token: string | null;
   proposed_action: Record<string, unknown> | null;
   tts_audio_base64: string | null;
+  suggested_replies?: string[];
 }
 
 export interface AdminCatalogueListItem {

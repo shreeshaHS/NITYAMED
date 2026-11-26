@@ -32,7 +32,7 @@ INDIC_TOKEN_PATTERN = r"[^\s?.!,;:\"'()\[\]{}]+"
 
 
 def _build_hybrid_features() -> FeatureUnion:
-    """Build combined Indic-safe word + character n-gram TF-IDF feature union."""
+    """Build compact float32 Indic-safe word + character n-gram TF-IDF feature union."""
     return FeatureUnion([
         (
             "word",
@@ -41,15 +41,18 @@ def _build_hybrid_features() -> FeatureUnion:
                 token_pattern=INDIC_TOKEN_PATTERN,
                 lowercase=True,
                 sublinear_tf=True,
+                dtype=np.float32,
             ),
         ),
         (
             "char",
             TfidfVectorizer(
                 analyzer="char_wb",
-                ngram_range=(2, 6),
+                ngram_range=(2, 5),
+                min_df=2,
                 lowercase=True,
                 sublinear_tf=True,
+                dtype=np.float32,
             ),
         ),
     ])
@@ -65,6 +68,7 @@ def _build_candidate_pipelines() -> dict[str, Pipeline]:
                 token_pattern=INDIC_TOKEN_PATTERN,
                 lowercase=True,
                 sublinear_tf=True,
+                dtype=np.float32,
             ),
         ),
         ("clf", LogisticRegression(max_iter=2500, C=4.0, class_weight="balanced")),
@@ -72,7 +76,7 @@ def _build_candidate_pipelines() -> dict[str, Pipeline]:
 
     hybrid_logreg = Pipeline([
         ("features", _build_hybrid_features()),
-        ("clf", LogisticRegression(max_iter=2500, C=5.0, class_weight="balanced")),
+        ("clf", LogisticRegression(max_iter=2500, C=5.5, class_weight="balanced")),
     ])
 
     hybrid_svm = Pipeline([
@@ -86,12 +90,12 @@ def _build_candidate_pipelines() -> dict[str, Pipeline]:
             "clf",
             VotingClassifier(
                 estimators=[
-                    ("lr", LogisticRegression(max_iter=2500, C=5.0, class_weight="balanced")),
+                    ("lr", LogisticRegression(max_iter=2500, C=5.5, class_weight="balanced")),
                     ("svm", CalibratedClassifierCV(LinearSVC(C=1.2, class_weight="balanced"), cv=3)),
-                    ("cnb", ComplementNB(alpha=0.3)),
+                    ("cnb", ComplementNB(alpha=0.35)),
                 ],
                 voting="soft",
-                weights=[2.0, 2.0, 1.0],
+                weights=[2.5, 2.0, 1.0],
             ),
         ),
     ])
@@ -199,7 +203,7 @@ def train_and_save_best(output_model_path: Path = MODEL_PATH, report_path: Path 
     best_pipeline.fit(texts, labels)
 
     output_model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(best_pipeline, output_model_path)
+    joblib.dump(best_pipeline, output_model_path, compress=3)
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     return report
 

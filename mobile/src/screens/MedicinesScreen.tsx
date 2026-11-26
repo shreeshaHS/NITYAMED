@@ -389,6 +389,47 @@ export function MedicinesScreen({ lang, medicines, isOnline, onRefresh }: Medici
               onChangeText={setCompanyFilter}
               placeholder={t(lang, 'companyFilterPlaceholder')}
             />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8, paddingBottom: 10 }}
+            >
+              {['Cipla', 'Micro Labs', 'Sun Pharma', 'Abbott', "Dr. Reddy's"].map((cmp) => (
+                <TouchableOpacity
+                  key={cmp}
+                  onPress={async () => {
+                    setCompanyFilter(cmp);
+                    setSearching(true);
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                    try {
+                      const hits = await api.searchCatalogue(searchQ.trim(), undefined, cmp);
+                      setResults(hits);
+                      setHasSearched(true);
+                    } catch (err) {
+                      setErrorMsg(
+                        err instanceof ApiError ? err.message : 'Search requires internet connection.'
+                      );
+                    } finally {
+                      setSearching(false);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-full border ${
+                    companyFilter === cmp
+                      ? 'bg-brand-soft border-brand'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <Text
+                    className={`text-[12.5px] font-bold ${
+                      companyFilter === cmp ? 'text-brand-dark' : 'text-ink-muted'
+                    }`}
+                  >
+                    {cmp}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
             <View className="flex-row gap-2.5 mt-1">
               <View className="flex-1">
                 <PrimaryButton title="Search" onPress={handleSearch} loading={searching} />

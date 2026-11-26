@@ -22,6 +22,7 @@ from app.modules.assistant.nlp import (
     detect_language,
     extract_company_query,
     extract_quantity_and_unit,
+    extract_snooze_minutes,
     extract_time_window,
     match_user_medicines,
     normalize_text,
@@ -150,6 +151,67 @@ def _time_bucket(hour: int) -> str:
     if 17 <= hour < 22:
         return "evening"
     return "night"
+
+
+def _build_suggested_replies(
+    intent: str, lang: str, requires_confirmation: bool
+) -> list[str]:
+    """Return contextual one-tap follow-up suggestions grounded in the current intent."""
+    if requires_confirmation:
+        return {
+            "kn": ["ಹೌದು ದೃಢೀಕರಿಸಿ", "ರದ್ದುಮಾಡಿ"],
+            "hi": ["हाँ कन्फर्म करो", "रद्द करो"],
+        }.get(lang, ["Yes, confirm", "Cancel"])
+
+    suggestions = {
+        "today_schedule": {
+            "kn": ["ಮುಂದಿನ ಡೋಸ್ ಯಾವಾಗ", "ಸ್ಟಾಕ್ ಪರಿಶೀಲಿಸಿ"],
+            "hi": ["अगली डोज़ कब है", "स्टॉक चेक करो"],
+            "en": ["When is my next dose?", "Check my stock"],
+        },
+        "check_stock": {
+            "kn": ["ರಿಫಿಲ್ ಯಾವಾಗ ಬೇಕು", "ಇಂದಿನ ವೇಳಾಪಟ್ಟಿ"],
+            "hi": ["रीफिल कब लेना है", "आज का शेड्यूल"],
+            "en": ["When should I refill?", "Today's schedule"],
+        },
+        "next_dose": {
+            "kn": ["ಡೋಸ್ ತೆಗೆದುಕೊಂಡೆ", "15 ನಿಮಿಷ ಸ್ನೂಜ್ ಮಾಡಿ"],
+            "hi": ["मैंने डोज़ ले ली", "15 मिनट स्नूज़ करो"],
+            "en": ["I took my dose", "Snooze 15 minutes"],
+        },
+        "company_lookup": {
+            "kn": ["ಇಂದಿನ ವೇಳಾಪಟ್ಟಿ ತೋರಿಸಿ", "ಸ್ಟಾಕ್ ತೋರಿಸಿ"],
+            "hi": ["आज की गोलियां दिखाओ", "स्टॉक चेक करो"],
+            "en": ["Today's schedule", "Check my stock"],
+        },
+        "greeting_help": {
+            "kn": ["ಇಂದು ಯಾವ ಮಾತ್ರೆ", "ನನ್ನ ಸ್ಟಾಕ್ ಎಷ್ಟಿದೆ", "ಸಿಪ್ಲಾ ಕಂಪನಿ ಔಷಧಿ"],
+            "hi": ["आज की दवाइयां", "मेरा स्टॉक कितना है", "सिप्ला कंपनी की दवा"],
+            "en": ["Today's schedule", "Check my stock", "Medicines by Cipla"],
+        },
+    }
+    bucket = suggestions.get(intent)
+    if bucket:
+        return bucket.get(lang, bucket["en"])
+    return {
+        "kn": ["ಇಂದಿನ ವೇಳಾಪಟ್ಟಿ", "ಮುಂದಿನ ಡೋಸ್"],
+        "hi": ["आज का शेड्यूल", "अगली डोज़"],
+    }.get(lang, ["Today's schedule", "Next dose"])
+
+
+def _pick_closest_due_dose(doses: list, now_utc: datetime):
+    """If one pending dose is clearly within +-90 mins while others are >3h away, pick it."""
+    if len(doses) <= 1:
+        return doses[0] if doses else None
+    scored = sorted(
+        ((abs((_as_utc(d.scheduled_at) - now_utc).total_seconds()), d) for d in doses),
+        key=lambda item: item[0],
+    )
+    closest_sec, closest_dose = scored[0]
+    second_sec = scored[1][0]
+    if closest_sec <= 5400 and second_sec - closest_sec >= 5400:
+        return closest_dose
+    return None
 
 
 def _resolve_target_medicine(
@@ -322,6 +384,9 @@ def handle_text_query(
             confirmation_token=token,
             proposed_action=proposed_action,
             tts_audio_base64=audio_b64,
+            suggested_replies=_build_suggested_replies(
+                final_intent, detected_lang, requires_confirmation
+            ),
         )
 
     if intent == "out_of_scope_clinical":
@@ -554,8 +619,37 @@ def handle_text_query(
         return _finalize(refill_prefix + "; ".join(lines), med_id_context=med.id if med else None)
 
     if intent == "medicine_info":
-        med, err = _resolve_target_medicine(norm_text, active_meds, state)
-        if med is None:
+        direct_owned = match_user_medicines(norm_text, active_meds)
+        med: PersonalMedicine | None = direct_owned[0] if len(direct_owned) == 1 else None
+        err: str | None = (
+            f"I found multiple matching medicines ({', '.join(m.display_name for m in direct_owned[:4])}). Which one do you mean?"
+            if len(direct_owned) > 1
+            else None
+        )
+        cat: MedicineCatalogue | None = None
+
+        if med is None and not err:
+            # Search verified catalogue directly when user names a medicine not yet in personal list
+            stop = {
+                "what", "is", "are", "uses", "used", "for", "side", "effects", "effect",
+                "precaution", "precautions", "tell", "me", "about", "explain", "medicine",
+                "tablet", "pill", "dawai", "goli", "matre", "gulige", "yenu", "kya", "hai",
+                "how", "does", "work", "works", "its", "this", "that", "it",
+            }
+            cat_terms = [
+                w for w in re.findall(r"[a-z0-9-]{3,}", norm_text) if w not in stop and not w.isdigit()
+            ]
+            if cat_terms:
+                cat_hits = search_catalogue(
+                    db, query=" ".join(cat_terms[:2]), limit=1, include_external=False
+                )
+                if cat_hits:
+                    cat = cat_hits[0]
+
+        if med is None and cat is None and not err:
+            med, err = _resolve_target_medicine(norm_text, active_meds, state)
+
+        if med is None and cat is None:
             clarify_med = err or {
                 "kn": "ದಯವಿಟ್ಟು ಯಾವ ಔಷಧಿಯ ಬಗ್ಗೆ ಮಾಹಿತಿ ಬೇಕು ಎಂಬುದನ್ನು ತಿಳಿಸಿ.",
                 "hi": "कृपया बताएं कि आपको किस दवाई की जानकारी चाहिए।",
@@ -566,44 +660,47 @@ def handle_text_query(
                 next_awaiting_slot="medicine",
                 next_awaiting_intent="medicine_info",
             )
-        if med.is_custom or med.catalogue_id is None:
-            custom_msg = {
-                "kn": f"{med.display_name} ಕಸ್ಟಮ್ ಎಂಟ್ರಿಯಾಗಿರುವುದರಿಂದ ಪರಿಶೀಲಿತ ಶೈಕ್ಷಣಿಕ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
-                "hi": f"{med.display_name} एक कस्टम दवाई एंट्री है, इसलिए सत्यापित शैक्षिक जानकारी उपलब्ध नहीं है।",
-            }.get(
-                detected_lang,
-                f"{med.display_name} is a custom medicine entry, so verified educational reference details are unavailable.",
-            )
-            return _finalize(custom_msg, med_id_context=med.id)
-        cat = db.get(MedicineCatalogue, med.catalogue_id)
+        if cat is None and med is not None:
+            if med.is_custom or med.catalogue_id is None:
+                custom_msg = {
+                    "kn": f"{med.display_name} ಕಸ್ಟಮ್ ಎಂಟ್ರಿಯಾಗಿರುವುದರಿಂದ ಪರಿಶೀಲಿತ ಶೈಕ್ಷಣಿಕ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
+                    "hi": f"{med.display_name} एक कस्टम दवाई एंट्री है, इसलिए सत्यापित शैक्षिक जानकारी उपलब्ध नहीं है।",
+                }.get(
+                    detected_lang,
+                    f"{med.display_name} is a custom medicine entry, so verified educational reference details are unavailable.",
+                )
+                return _finalize(custom_msg, med_id_context=med.id)
+            cat = db.get(MedicineCatalogue, med.catalogue_id)
+
+        med_label = med.display_name if med is not None else cat.brand_name
         edu = _ensure_catalogue_education(db, cat) if cat else None
         if edu is None:
             unavail_msg = {
-                "kn": f"{med.display_name} ಗಾಗಿ ಪರಿಶೀಲಿತ ಮಾಹಿತಿ ಸದ್ಯಕ್ಕೆ ಲಭ್ಯವಿಲ್ಲ.",
-                "hi": f"{med.display_name} के लिए सत्यापित जानकारी अभी उपलब्ध नहीं है।",
+                "kn": f"{med_label} ಗಾಗಿ ಪರಿಶೀಲಿತ ಮಾಹಿತಿ ಸದ್ಯಕ್ಕೆ ಲಭ್ಯವಿಲ್ಲ.",
+                "hi": f"{med_label} के लिए सत्यापित जानकारी अभी उपलब्ध नहीं है।",
             }.get(
                 detected_lang,
-                f"Verified educational details for {med.display_name} are currently unavailable.",
+                f"Verified educational details for {med_label} are currently unavailable.",
             )
-            return _finalize(unavail_msg, med_id_context=med.id)
+            return _finalize(unavail_msg, med_id_context=med.id if med else None)
         if detected_lang == "kn":
             info_msg = (
-                f"{med.display_name} ({edu.category}) — ಉಪಯೋಗ: {edu.common_uses} "
+                f"{med_label} ({edu.category}) — ಉಪಯೋಗ: {edu.common_uses} "
                 f"ಅಡ್ಡಪರಿಣಾಮಗಳು: {edu.side_effects} ಮುನ್ನೆಚ್ಚರಿಕೆ: {edu.precautions} "
                 f"(ಮೂಲ: {edu.source_name}, {edu.verified_at.isoformat()})."
             )
         elif detected_lang == "hi":
             info_msg = (
-                f"{med.display_name} ({edu.category}) — उपयोग: {edu.common_uses} "
+                f"{med_label} ({edu.category}) — उपयोग: {edu.common_uses} "
                 f"साइड इफेक्ट: {edu.side_effects} सावधानियां: {edu.precautions} "
                 f"(स्रोत: {edu.source_name}, {edu.verified_at.isoformat()})."
             )
         else:
             info_msg = (
-                f"{med.display_name} ({edu.category}): {edu.common_uses} Common side effects: {edu.side_effects} "
+                f"{med_label} ({edu.category}): {edu.common_uses} Common side effects: {edu.side_effects} "
                 f"Precautions: {edu.precautions} (Source: {edu.source_name}, verified {edu.verified_at.isoformat()})."
             )
-        return _finalize(info_msg, med_id_context=med.id)
+        return _finalize(info_msg, med_id_context=med.id if med else None)
 
     # --- STATE-CHANGING INTENTS (STRICT CONFIRMATION GATE) ---
     if intent == "confirm_dose":
@@ -627,7 +724,8 @@ def handle_text_query(
                 "hi": "आज कन्फर्म करने के लिए कोई लंबित डोज़ नहीं मिली।",
             }.get(detected_lang, "No pending scheduled dose matched your request today.")
             return _finalize(no_pending_msg, final_source="clarification")
-        if len(pending) > 1:
+        closest_dose = _pick_closest_due_dose(pending, datetime.now(UTC))
+        if len(pending) > 1 and closest_dose is None:
             options = ", ".join(
                 f"{d.display_name} ({d.scheduled_at.astimezone(tz).strftime('%H:%M')})" for d in pending[:4]
             )
@@ -645,7 +743,7 @@ def handle_text_query(
                 next_awaiting_intent="confirm_dose",
             )
 
-        target_dose = pending[0]
+        target_dose = closest_dose or pending[0]
         spoken_qty, is_pack = extract_quantity_and_unit(norm_text)
         actual_qty = (
             spoken_qty.quantize(Decimal("0.01"))
@@ -805,15 +903,16 @@ def handle_text_query(
                 }.get(detected_lang, "No pending dose found to snooze right now."),
                 final_source="clarification",
             )
+        snooze_mins = extract_snooze_minutes(norm_text, default=15)
         target_dose = pending[0]
-        res = schedules_service.snooze_dose(db, user, target_dose.id, DoseSnoozeRequest(minutes=15))
+        res = schedules_service.snooze_dose(db, user, target_dose.id, DoseSnoozeRequest(minutes=snooze_mins))
         snooze_local = _as_utc(res.dose.snoozed_until or res.dose.scheduled_at).astimezone(tz).strftime("%H:%M")
         if detected_lang == "kn":
-            snz_msg = f"{target_dose.display_name} ರಿಮೈಂಡರ್ ಅನ್ನು {snooze_local} ವರೆಗೆ 15 ನಿಮಿಷ ಮುಂದೂಡಲಾಗಿದೆ."
+            snz_msg = f"{target_dose.display_name} ರಿಮೈಂಡರ್ ಅನ್ನು {snooze_local} ವರೆಗೆ {snooze_mins} ನಿಮಿಷ ಮುಂದೂಡಲಾಗಿದೆ."
         elif detected_lang == "hi":
-            snz_msg = f"{target_dose.display_name} का रिमाइंडर 15 मिनट के लिए {snooze_local} तक स्नूज़ कर दिया गया है।"
+            snz_msg = f"{target_dose.display_name} का रिमाइंडर {snooze_mins} मिनट के लिए {snooze_local} तक स्नूज़ कर दिया गया है।"
         else:
-            snz_msg = f"Snoozed your {target_dose.display_name} reminder by 15 minutes until {snooze_local}."
+            snz_msg = f"Snoozed your {target_dose.display_name} reminder by {snooze_mins} minutes until {snooze_local}."
         return _finalize(snz_msg, med_id_context=target_dose.personal_med_id)
 
     return _finalize(_OOS_REPLY[detected_lang])

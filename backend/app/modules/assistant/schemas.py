@@ -35,3 +35,4 @@ class AssistantResponse(BaseModel):
     confirmation_token: UUID | None = None
     proposed_action: dict | None = None
     tts_audio_base64: str | None = None
+    suggested_replies: list[str] = Field(default_factory=list)

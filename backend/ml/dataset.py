@@ -1689,6 +1689,120 @@ def build_multilingual_dataset() -> list[UtteranceSample]:
             "hello nityamed enu help madಬಹುದು",
             "hi assistant aap kaise help karte ho heli",
         ]),
+        ("grt_en_5", "greeting_help", "en", [
+            "hello who is there help me",
+            "hi assistant i need help",
+        ]),
+        ("grt_en_6", "greeting_help", "en", [
+            "what commands do you support",
+            "thanks a lot nityamed",
+        ]),
+        ("grt_kn_3", "greeting_help", "kn", [
+            "ಹಲೋ ನಿತ್ಯಮೆಡ್ ನನಗೆ ಸಹಾಯ ಬೇಕು",
+            "ನೀವು ಏನೆಲ್ಲಾ ಸಹಾಯ ಮಾಡುತ್ತೀರಿ ಹೇಳಿ",
+        ]),
+        ("grt_hi_3", "greeting_help", "hi", [
+            "हेलो नित्यमेड मुझे मदद चाहिए",
+            "बताओ तुम मेरी किस तरह सहायता कर सकते हो",
+        ]),
+
+        # ================= Voice Short & Natural Everyday Phrasing Boosters =================
+        ("v_sch_1", "today_schedule", "en", [
+            "today schedule",
+            "my medicines today",
+        ]),
+        ("v_sch_2", "today_schedule", "en", [
+            "what pills today",
+            "morning schedule list",
+        ]),
+        ("v_sch_kn_1", "today_schedule", "kn_rom", [
+            "ivattu yava matre",
+            "today tablet schedule torisi",
+        ]),
+        ("v_sch_hi_1", "today_schedule", "hi_rom", [
+            "aaj ki goli list",
+            "aaj ka schedule batao",
+        ]),
+        ("v_stk_1", "check_stock", "en", [
+            "check stock",
+            "my tablet balance",
+        ]),
+        ("v_stk_2", "check_stock", "en", [
+            "how many left",
+            "remaining tablets dolo",
+        ]),
+        ("v_stk_kn_1", "check_stock", "kn_rom", [
+            "stock check maadi",
+            "dolo eshtu ide",
+        ]),
+        ("v_stk_hi_1", "check_stock", "hi_rom", [
+            "stock check karo",
+            "kitni goli bachi hai",
+        ]),
+        ("v_nxt_1", "next_dose", "en", [
+            "next dose",
+            "when next pill",
+        ]),
+        ("v_nxt_2", "next_dose", "en", [
+            "upcoming medicine time",
+            "when should i take next",
+        ]),
+        ("v_ref_1", "refill_check", "en", [
+            "when refill",
+            "need to buy soon",
+        ]),
+        ("v_ref_2", "refill_check", "en", [
+            "which medicine running out soon",
+            "how many days stock will last",
+        ]),
+        ("v_ref_kn_1", "refill_check", "kn_rom", [
+            "yavaga refill madbeku",
+            "inneshtu dina barutte tablet",
+        ]),
+        ("v_ref_hi_1", "refill_check", "hi_rom", [
+            "refill kab lena hai",
+            "kitne din aur chalegi dawai",
+        ]),
+        ("v_cnf_1", "confirm_dose", "en", [
+            "took dolo",
+            "mark tablet taken",
+        ]),
+        ("v_cnf_2", "confirm_dose", "en", [
+            "i finished morning medicine",
+            "just took my dose",
+        ]),
+        ("v_cmp_1", "company_lookup", "en", [
+            "cipla tablets",
+            "show micro labs",
+        ]),
+        ("v_cmp_2", "company_lookup", "en", [
+            "which company makes this tablet",
+            "find glenmark medicines",
+        ]),
+        ("v_snz_1", "snooze_dose", "en", [
+            "snooze 10 minutes",
+            "delay dose 30 mins",
+        ]),
+        ("v_skp_1", "skip_dose", "en", [
+            "skip dolo",
+            "skip morning pill",
+        ]),
+        ("v_inf_1", "medicine_info", "en", [
+            "dolo side effects",
+            "what is metformin used for",
+        ]),
+        ("v_adh_1", "adherence_status", "en", [
+            "did i take morning dose",
+            "my adherence today",
+        ]),
+        ("v_oos_1", "out_of_scope", "en", [
+            "play bollywood music",
+            "what is the cricket score",
+        ]),
+        ("v_oos_2", "out_of_scope", "en", [
+            "book a cab to airport",
+            "tell me a funny joke",
+        ]),
     ]
 
     samples: list[UtteranceSample] = []

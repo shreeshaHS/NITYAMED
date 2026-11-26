@@ -2,8 +2,8 @@
 
 import React, { useState } from 'react';
 import { Modal, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { Card, EmptyState, FadeSlideIn, LabeledInput, PrimaryButton } from '../components/AccessibleUI';
-import { BellIcon, PackageIcon } from '../components/Icons';
+import { AnimatedProgressBar, Card, EmptyState, FadeSlideIn, LabeledInput, PrimaryButton } from '../components/AccessibleUI';
+import { BellIcon, HistoryIcon, PackageIcon } from '../components/Icons';
 import { t } from '../i18n/translations';
 import { api } from '../services/api';
 import { Colors } from '../theme';
@@ -159,21 +159,55 @@ export function InventoryScreen({
         />
       ) : (
         <View className={twoCol ? 'flex-row flex-wrap -mx-2' : ''}>
-          {inventory.map((item, idx) => (
+          {inventory.map((item, idx) => {
+            const refillInfo = refills.find((r) => r.personal_med_id === item.personal_med_id);
+            const remDays = refillInfo?.estimated_remaining_days ?? null;
+            const gaugeRatio = remDays !== null ? Math.min(1, Math.max(0.05, remDays / 30)) : 0.5;
+            const gaugeColor =
+              remDays !== null && remDays <= 5
+                ? Colors.danger
+                : remDays !== null && remDays <= 10
+                  ? '#D97706'
+                  : Colors.emerald;
+
+            return (
             <FadeSlideIn
               key={item.personal_med_id}
               delay={Math.min(idx * 45, 200)}
               className={twoCol ? 'w-1/2 px-2' : 'w-full'}
             >
-              <Card accentColor={Colors.primary}>
+              <Card accentColor={refillInfo?.should_alert_now ? '#D97706' : Colors.primary}>
                 <View className="flex-row items-center mb-3">
                   <View className="w-10 h-10 rounded-xl bg-brand-soft items-center justify-center mr-3">
                     <PackageIcon size={20} color={Colors.primary} />
                   </View>
-                  <Text className="text-[18.5px] font-extrabold text-ink flex-1">
-                    {item.display_name}
-                  </Text>
+                  <View className="flex-1 pr-2">
+                    <Text className="text-[18.5px] font-extrabold text-ink">
+                      {item.display_name}
+                    </Text>
+                    {remDays !== null && (
+                      <Text className="text-[12.5px] font-semibold text-ink-muted mt-0.5">
+                        ~{remDays} days runway remaining
+                      </Text>
+                    )}
+                  </View>
+                  {refillInfo?.should_alert_now && (
+                    <View className="bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full">
+                      <Text className="text-[11px] font-extrabold text-amber-900">Refill Soon</Text>
+                    </View>
+                  )}
                 </View>
+
+                {remDays !== null && (
+                  <View className="mb-3.5">
+                    <AnimatedProgressBar
+                      progress={gaugeRatio}
+                      height={7}
+                      trackColor="#F1F5F9"
+                      fillColor={gaugeColor}
+                    />
+                  </View>
+                )}
 
                 <View className="flex-row gap-2.5 mb-4">
                   <View className="flex-1 bg-brand-soft/60 border border-brand/15 rounded-2xl p-3.5">
@@ -254,6 +288,7 @@ export function InventoryScreen({
                     <PrimaryButton
                       title={t(lang, 'ledgerHistoryBtn')}
                       variant="secondary"
+                      icon={<HistoryIcon size={15} color={Colors.primaryDark} />}
                       loading={busyId === item.personal_med_id}
                       onPress={() => handleOpenLedger(item.personal_med_id, item.display_name)}
                     />
@@ -327,7 +362,8 @@ export function InventoryScreen({
                 )}
               </Card>
             </FadeSlideIn>
-          ))}
+            );
+          })}
         </View>
       )}
 

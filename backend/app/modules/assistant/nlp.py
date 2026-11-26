@@ -59,6 +59,16 @@ _SPELLING_FIXES: dict[str, str] = {
     "hv": "have",
     "takn": "taken",
     "tkn": "taken",
+    "schedul": "schedule",
+    "compny": "company",
+    "manfacturer": "manufacturer",
+    "precautns": "precautions",
+    "tablits": "tablets",
+    "mornng": "morning",
+    "eveng": "evening",
+    "aftrnon": "afternoon",
+    "snz": "snooze",
+    "skp": "skip",
 }
 
 _NUMBER_WORDS: dict[str, Decimal] = {
@@ -205,17 +215,82 @@ def parse_voice_confirmation_reply(norm_text: str) -> bool | None:
     return None
 
 
+_KNOWN_PHARMA_COMPANIES: tuple[str, ...] = (
+    "micro labs",
+    "sun pharma",
+    "dr reddys",
+    "dr reddy",
+    "cipla",
+    "glenmark",
+    "lupin",
+    "mankind",
+    "alkem",
+    "torrent",
+    "abbott",
+    "zydus",
+    "aristo",
+    "intas",
+    "ipca",
+    "biocon",
+    "pfizer",
+    "gsk",
+    "sanofi",
+    "usv",
+    "macleods",
+    "erica",
+    "wockhardt",
+)
+
+_DOMAIN_ACTION_WORDS = (
+    "stock",
+    "tablet",
+    "tablets",
+    "pill",
+    "pills",
+    "capsule",
+    "dose",
+    "doses",
+    "schedule",
+    "refill",
+    "company",
+    "manufacturer",
+    "snooze",
+    "skip",
+    "taken",
+    "took",
+    "side effect",
+    "precaution",
+    "next",
+    "today",
+    "buy",
+    "purchased",
+    "मात्रा",
+    "ಡೋಸ್",
+    "ಮಾತ್ರೆ",
+    "ಸ್ಟಾಕ್",
+    "ಕಂಪನಿ",
+    "गोली",
+    "स्टॉक",
+    "कंपनी",
+)
+
+
 def extract_company_query(norm_text: str) -> str | None:
-    """Extract a pharmaceutical manufacturer/company token from a conversational query."""
+    """Extract a pharmaceutical manufacturer/company name from a multilingual query."""
+    for known in _KNOWN_PHARMA_COMPANIES:
+        if re.search(rf"\b{re.escape(known)}\b", norm_text):
+            return known
+
     patterns = (
-        r"(?:made by|manufactured by|from company|company named|company)\s+([a-z0-9\s&-]{2,40})",
-        r"([a-z0-9&-]{3,25})\s+(?:company|pharma|labs|laboratories|medicines|tablets|pills)",
+        r"(?:made by|manufactured by|from company|by company|company named|company)\s+([a-z0-9\s.&'-]{2,40})",
+        r"([a-z0-9.&'-]{3,28}(?:\s+(?:pharma|labs|laboratories|healthcare|lifesciences))?)\s+(?:company|manufacturer|products|medicines|tablets|pills)",
+        r"([a-z0-9.&'-]{3,28})\s+(?:ಕಂಪನಿ|ಕಂಪನಿಯ|कंपनी)",
     )
     for pat in patterns:
         m = re.search(pat, norm_text, re.IGNORECASE)
         if m:
             candidate = re.sub(
-                r"\b(company|medicines|medicine|tablets|tablet|pills|capsules|syrup|please|only|remember|name|show|find|which|make|makes|what)\b",
+                r"\b(company|manufacturer|medicines|medicine|tablets|tablet|pills|capsules|syrup|please|only|remember|name|show|find|which|make|makes|what|verified|list|from|ki|ke|ka|yava|kaunsi)\b",
                 " ",
                 m.group(1),
             )
@@ -225,15 +300,38 @@ def extract_company_query(norm_text: str) -> str | None:
     return None
 
 
+def extract_snooze_minutes(norm_text: str, default: int = 15) -> int:
+    """Extract a custom snooze duration in minutes (clamped safely to 5..120)."""
+    m = re.search(r"\b(\d{1,3})\s*(?:min|mins|minute|minutes|ನಿಮಿಷ|मिनट)?\b", norm_text)
+    if m:
+        val = int(m.group(1))
+        if 5 <= val <= 120:
+            return val
+    for word, dec_val in _NUMBER_WORDS.items():
+        if re.search(rf"(?:^|\s){re.escape(word)}(?:\s|$)", norm_text):
+            iv = int(dec_val)
+            if 5 <= iv <= 120:
+                return iv
+    return default
+
+
 def is_greeting_or_help(norm_text: str) -> bool:
-    """Detect conversational greetings, gratitude, or help requests."""
+    """Detect conversational greetings, gratitude, or help requests without grabbing real tasks."""
+    if any(w in norm_text for w in _DOMAIN_ACTION_WORDS):
+        return False
+    if re.fullmatch(
+        r"(?:hi|hello|hey|good morning|good afternoon|good evening|namaste|namaskara|vanakkam|"
+        r"thanks|thank you|dhanyavad|dhanyavaad|ನಮಸ್ಕಾರ|ಧನ್ಯವಾದ|ಹಾಯ್|ಹಲೋ|नमस्ते|धन्यवाद|हाय|हेलो|"
+        r"help|what can you do|who are you|how do you work|sahaya|ಸಹಾಯ|मदद)",
+        norm_text,
+    ):
+        return True
     return bool(
-        re.fullmatch(
-            r"(?:hi|hello|hey|good morning|good afternoon|good evening|namaste|namaskara|vanakkam|"
-            r"thanks|thank you|dhanyavad|dhanyavaad|ನಮಸ್ಕಾರ|ಧನ್ಯವಾದ|ಹಾಯ್|ಹಲೋ|नमस्ते|धन्यवाद|हाय|हेलो|"
-            r"help|what can you do|who are you|how do you work|sahaya|ಸಹಾಯ|मदद)",
+        re.search(
+            r"^(?:hi|hello|hey|namaste|namaskara|good morning|good evening|thank you|thanks)\b",
             norm_text,
         )
+        and len(norm_text.split()) <= 5
     )
 
 
