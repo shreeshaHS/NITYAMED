@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.medicines.models import MedicineCatalogue
+from app.modules.medicines.policy import check_medicine_policy
 
 VALID_FORMS = {"tablet", "capsule", "syrup", "injection", "inhaler", "drops", "other"}
 
@@ -180,6 +181,10 @@ def import_catalogue_records(db: Session, rows: list[dict], batch_size: int = 50
         brand = str(raw.get("brand_name") or raw.get("name") or "").strip()
         generic, active_ingredients, strength = _parse_composition(raw)
         if not brand or not generic:
+            skipped_invalid += 1
+            continue
+        allowed, _ = check_medicine_policy(brand, generic, active_ingredients)
+        if not allowed:
             skipped_invalid += 1
             continue
 

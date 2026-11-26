@@ -24,21 +24,21 @@ interface AssistantScreenProps {
 const QUICK_PROMPTS: Record<SupportedLang, string[]> = {
   en: [
     'Which medicines should I take today?',
+    'Show verified medicines from Micro Labs',
     'How many tablets do I have left?',
     'When is my next dose?',
-    'When should I refill my medicine?',
   ],
   kn: [
     'ಇಂದು ನಾನು ಯಾವ ಮಾತ್ರೆಗಳನ್ನು ತೆಗೆದುಕೊಳ್ಳಬೇಕು',
+    'ಸಿಪ್ಲಾ ಕಂಪನಿಯ ಔಷಧಿಗಳನ್ನು ತೋರಿಸಿ',
     'ನನ್ ಹತ್ರ ಎಷ್ಟ್ ಗುಳಿಗೆ ಉಂಟು',
     'ನನ್ನ ಮುಂದಿನ ಡೋಸ್ ಯಾವಾಗ ಇದೆ',
-    'ನಾನು ಯಾವಾಗ ಹೊಸ ಮಾತ್ರೆ ಖರೀದಿಸಬೇಕು',
   ],
   hi: [
     'आज मुझे कौन सी दवाइयां लेनी हैं',
+    'सिप्ला कंपनी की दवाइयां दिखाओ',
     'मेरे पास कितनी गोलियां बची हैं',
     'मेरी अगली खुराक कब है',
-    'मुझे अपनी दवाई कब रीफिल करनी चाहिए',
   ],
 };
 
@@ -84,7 +84,10 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
       speakText(res.reply_text, res.language);
       if (
         !res.requires_confirmation &&
-        (res.intent === 'confirm_dose' || res.intent === 'update_stock_purchase')
+        (res.intent === 'confirm_dose' ||
+          res.intent === 'update_stock_purchase' ||
+          res.intent === 'skip_dose' ||
+          res.intent === 'snooze_dose')
       ) {
         await onDataChanged();
       }
@@ -205,8 +208,7 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
       {!isOnline && (
         <View className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4">
           <Text className="text-[14.5px] font-semibold text-amber-800 leading-6">
-            You are offline. Voice/text assistant requires internet — please use the Today tab for
-            offline dose confirmations.
+            {t(lang, 'assistantOfflineMsg')}
           </Text>
         </View>
       )}
@@ -221,7 +223,7 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         <View className="flex-row gap-2.5 mt-1">
           <View className="flex-1">
             <PrimaryButton
-              title={listening ? 'Stop Listening' : 'Speak (Mic)'}
+              title={listening ? t(lang, 'stopListening') : t(lang, 'speakMic')}
               variant={listening ? 'danger' : 'primary'}
               onPress={handleToggleVoiceInput}
               disabled={!isOnline || loading}
@@ -239,7 +241,7 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         </View>
         <View className="mt-2.5">
           <PrimaryButton
-            title={speakReplies ? 'Voice Reply: ON' : 'Voice Reply: OFF'}
+            title={speakReplies ? t(lang, 'voiceReplyOn') : t(lang, 'voiceReplyOff')}
             variant="outline"
             onPress={() => setSpeakReplies((prev) => !prev)}
           />
@@ -254,7 +256,7 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         )}
 
         <Text className="text-[13.5px] font-bold text-ink-muted mt-5 mb-2.5">
-          Quick Tap Examples:
+          {t(lang, 'quickExamples')}
         </Text>
         <View className={twoCol ? 'flex-row flex-wrap -mx-1.5' : 'gap-2'}>
           {QUICK_PROMPTS[lang].map((prompt) => (
@@ -281,7 +283,7 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         <FadeSlideIn>
           <Card className="bg-brand-soft/80 border-2 border-brand">
             <Text className="text-[19px] font-extrabold text-brand-dark">
-              Confirmation Required
+              {t(lang, 'confirmationRequired')}
             </Text>
             <Text className="text-[15.5px] text-ink leading-6 my-3">
               {pendingConfirm.reply_text}

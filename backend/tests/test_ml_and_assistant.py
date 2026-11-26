@@ -372,3 +372,103 @@ def test_huggingface_whisper_and_bounded_dialect_adapters(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "post", _fake_hf_post)
     assert BoundedLLMAdapter().classify_dialect_intent("ivatt enu tinbeku") == ("today_schedule", 0.94)
     get_settings.cache_clear()
+
+
+def test_conversational_assistant_company_slot_fill_and_voice_skip_snooze(
+    client: TestClient, db_session: Session, monkeypatch
+) -> None:
+    import httpx
+    from app.core.config import get_settings
+
+    headers = _auth_header(client, "conv_ai@example.com")
+    _setup_dolo_with_schedule(client, db_session, headers)
+
+    # 1. Greeting works naturally without falling into out_of_scope
+    greet = client.post("/api/v1/assistant/text", headers=headers, json={"text": "Hello!"})
+    assert greet.status_code == 200
+    assert greet.json()["intent"] == "greeting_help"
+    assert "active medicine" in greet.json()["reply_text"]
+
+    # 2. Company-only lookup when patient forgets brand/salt name
+    cmp_resp = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "I only remember company Micro Labs, show medicines"},
+    )
+    assert cmp_resp.status_code == 200
+    assert cmp_resp.json()["intent"] == "company_lookup"
+    assert "Dolo 650" in cmp_resp.json()["reply_text"]
+
+    # 3. Conversational Gemini/HF reply phrasing grounded in DB facts
+    with monkeypatch.context() as mp:
+        mp.setenv("HF_TOKEN", "hf_test_conv")
+        get_settings.cache_clear()
+
+        class _ConvResp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "You currently have 15.00 tablets of Dolo 650 left in stock!"
+                            }
+                        }
+                    ]
+                }
+
+        mp.setattr(httpx, "post", lambda url, **kwargs: _ConvResp())
+        conv = client.post(
+            "/api/v1/assistant/text",
+            headers=headers,
+            json={"text": "How many dolo left?"},
+        )
+        assert conv.status_code == 200
+        assert "15.00 tablets of Dolo 650" in conv.json()["reply_text"]
+    get_settings.cache_clear()
+
+    # 4. Multi-turn slot filling: user omits quantity first, then supplies "1 strip"
+    ask_qty = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "I purchased Dolo update my stock"},
+    )
+    assert ask_qty.status_code == 200
+    assert ask_qty.json()["classification_source"] == "clarification"
+
+    provide_qty = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "1 strip"},
+    )
+    assert provide_qty.status_code == 200
+    assert provide_qty.json()["intent"] == "update_stock_purchase"
+    assert provide_qty.json()["requires_confirmation"] is True
+
+    # Cancel purchase, then test voice snooze + voice skip
+    client.post("/api/v1/assistant/text", headers=headers, json={"text": "no"})
+
+    snz = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "snooze my dolo reminder for 15 minutes"},
+    )
+    assert snz.status_code == 200
+    assert snz.json()["intent"] == "snooze_dose"
+    assert "Snoozed" in snz.json()["reply_text"]
+
+    skp = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "skip my dolo dose today"},
+    )
+    assert skp.status_code == 200
+    assert skp.json()["intent"] == "skip_dose"
+    assert skp.json()["requires_confirmation"] is True
+
+    skp_yes = client.post("/api/v1/assistant/text", headers=headers, json={"text": "yes"})
+    assert skp_yes.status_code == 200
+    assert skp_yes.json()["intent"] == "skip_dose"
+    assert "skipped" in skp_yes.json()["reply_text"].lower()

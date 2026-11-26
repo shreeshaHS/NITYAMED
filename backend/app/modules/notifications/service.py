@@ -4,12 +4,18 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
 from app.modules.auth.email_service import send_reminder_email
-from app.modules.auth.models import PatientProfile, User
+from app.modules.auth.models import (
+    EmailVerificationCode,
+    PatientProfile,
+    PendingRegistration,
+    RefreshToken,
+    User,
+)
 from app.modules.notifications.models import Notification
 from app.modules.notifications.schemas import (
     NotificationResponse,
@@ -18,7 +24,7 @@ from app.modules.notifications.schemas import (
 )
 from app.modules.refill.service import get_refill_predictions
 from app.modules.schedules.models import DoseEvent
-from app.modules.schedules.service import expire_overdue_doses
+from app.modules.schedules.service import ensure_rolling_horizon_for_user, expire_overdue_doses
 
 
 def format_privacy_preview(
@@ -186,16 +192,38 @@ def update_notification_status(
 
 
 def run_maintenance_sweep(db: Session) -> SweepSummaryResponse:
-    """Idempotently expire overdue doses and generate daily refill alerts across active patients."""
-    expired_count = expire_overdue_doses(db)
+    """Expire overdue doses, extend rolling horizons, prune auth leftovers, and emit refill alerts."""
+    now = datetime.now(UTC)
+    expired_count = expire_overdue_doses(db, now=now)
     patients = db.scalars(
         select(User).where(User.role == "patient", User.is_active.is_(True), User.deleted_at.is_(None))
     ).all()
 
     alerts_created = 0
     for patient in patients:
+        ensure_rolling_horizon_for_user(db, patient.id)
         alerts_created += generate_refill_alerts_for_user(db, patient)
         alerts_created += generate_email_dose_backups_for_user(db, patient)
+
+    # Prune expired pending registrations, old OTP codes, and stale revoked/expired refresh tokens
+    db.execute(delete(PendingRegistration).where(PendingRegistration.expires_at <= now))
+    db.execute(
+        delete(EmailVerificationCode).where(
+            or_(
+                EmailVerificationCode.expires_at <= now - timedelta(days=1),
+                EmailVerificationCode.used_at <= now - timedelta(days=1),
+            )
+        )
+    )
+    db.execute(
+        delete(RefreshToken).where(
+            or_(
+                RefreshToken.expires_at <= now - timedelta(days=7),
+                RefreshToken.revoked_at <= now - timedelta(days=7),
+            )
+        )
+    )
+    db.commit()
 
     return SweepSummaryResponse(
         expired_doses_marked=expired_count,

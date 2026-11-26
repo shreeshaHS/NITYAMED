@@ -18,6 +18,7 @@ import type {
   PersonalMedicineDetail,
   ProfileResponse,
   RefillPredictionItem,
+  StockTransactionItem,
   SupportedLang,
   SyncBootstrapResponse,
   TokenResponse,
@@ -165,18 +166,34 @@ export const api = {
     });
   },
 
-  searchCatalogue(q: string, form?: string) {
+  searchCatalogue(q: string, form?: string, manufacturer?: string) {
     const params = new URLSearchParams({ q, limit: '25' });
     if (form) params.set('form', form);
+    if (manufacturer && manufacturer.trim()) params.set('manufacturer', manufacturer.trim());
     return request<CatalogueItem[]>(`/catalogue/search?${params.toString()}`);
+  },
+
+  requestCatalogueVerification(payload: {
+    brand_name: string;
+    generic_name?: string | null;
+    strength: string;
+    dosage_form: string;
+    manufacturer?: string | null;
+    standard_pack_size?: string | null;
+  }) {
+    return request<CatalogueItem>('/catalogue/requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 
   getCatalogueEducation(catalogueId: string) {
     return request<MedicineEducation>(`/catalogue/${catalogueId}/education`);
   },
 
-  listMedicines(status = 'active') {
-    return request<PersonalMedicine[]>(`/medicines?status=${encodeURIComponent(status)}`);
+  listMedicines(status?: string) {
+    const query = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+    return request<PersonalMedicine[]>(`/medicines${query}`);
   },
 
   createMedicine(payload: Record<string, unknown>) {
@@ -257,6 +274,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ packs, loose_units, client_event_id }),
     });
+  },
+
+  adjustStock(
+    medId: string,
+    tx_type: 'MANUAL_ADJUSTMENT' | 'EXPIRED_DAMAGED_LOST',
+    qty_delta: string,
+    notes: string,
+    client_event_id: string
+  ) {
+    return request(`/inventory/${medId}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({ tx_type, qty_delta, notes, client_event_id }),
+    });
+  },
+
+  listStockTransactions(medId: string) {
+    return request<StockTransactionItem[]>(`/inventory/${medId}/transactions?limit=30`);
   },
 
   reconcileStock(medId: string, actual_counted_stock: string, client_event_id: string) {

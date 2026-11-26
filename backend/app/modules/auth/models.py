@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, SmallInteger, String, Text, Uuid, false
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, SmallInteger, String, Text, Uuid, false, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -63,6 +63,9 @@ class EmailVerificationCode(Base):
         String(20), nullable=False, default="email_verify", server_default="email_verify"
     )
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -84,6 +87,9 @@ class PendingRegistration(Base):
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     preferred_lang: Mapped[str] = mapped_column(String(5), nullable=False, default="en")
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

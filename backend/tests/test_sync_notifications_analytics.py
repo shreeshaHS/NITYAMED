@@ -9,7 +9,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.modules.medicines.models import MedicineCatalogue
 from app.modules.schedules.models import DoseEvent
+
+
+def _seed_verified_item(db_session: Session, brand: str) -> str:
+    cat = MedicineCatalogue(
+        brand_name=brand,
+        generic_name=f"{brand} Salt",
+        strength="500 mg",
+        dosage_form="tablet",
+        standard_pack_size=10,
+        pack_unit="tablet",
+        manufacturer="NityaLab",
+        is_verified=True,
+        is_deprecated=False,
+    )
+    db_session.add(cat)
+    db_session.commit()
+    return str(cat.id)
 
 
 def _auth_header(client: TestClient, email: str) -> dict[str, str]:
@@ -26,18 +44,18 @@ def _auth_header(client: TestClient, email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-def test_offline_batch_sync_idempotency_and_bootstrap(client: TestClient) -> None:
+def test_offline_batch_sync_idempotency_and_bootstrap(
+    client: TestClient, db_session: Session
+) -> None:
     headers = _auth_header(client, "sync@example.com")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    cat_id = _seed_verified_item(db_session, "Glycomet 500")
 
     med = client.post(
         "/api/v1/medicines",
         headers=headers,
         json={
-            "is_custom": True,
-            "display_name": "Glycomet 500",
-            "strength": "500 mg",
-            "dosage_form": "tablet",
+            "catalogue_id": cat_id,
             "dose_per_intake": "1.00",
             "dose_unit": "tablet",
             "stock_unit": "tablet",
@@ -116,15 +134,13 @@ def test_notifications_privacy_dedup_and_cron_sweep(
 ) -> None:
     headers = _auth_header(client, "notif@example.com")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    cat_id = _seed_verified_item(db_session, "SecretMed 10")
 
     med = client.post(
         "/api/v1/medicines",
         headers=headers,
         json={
-            "is_custom": True,
-            "display_name": "SecretMed 10",
-            "strength": "10 mg",
-            "dosage_form": "tablet",
+            "catalogue_id": cat_id,
             "dose_per_intake": "1.00",
             "dose_unit": "tablet",
             "stock_unit": "tablet",
@@ -196,14 +212,12 @@ def test_opt_in_email_dose_and_refill_backup_alerts(
     client.patch("/api/v1/profile", headers=headers, json={"email_reminders_enabled": True})
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    cat_id = _seed_verified_item(db_session, "ConfidentialDrug 500")
     med = client.post(
         "/api/v1/medicines",
         headers=headers,
         json={
-            "is_custom": True,
-            "display_name": "ConfidentialDrug 500",
-            "strength": "500 mg",
-            "dosage_form": "tablet",
+            "catalogue_id": cat_id,
             "dose_per_intake": "1.00",
             "dose_unit": "tablet",
             "stock_unit": "tablet",
@@ -250,15 +264,13 @@ def test_adherence_analytics_metrics_and_pattern_detection(
 ) -> None:
     headers = _auth_header(client, "analytics@example.com")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    cat_id = _seed_verified_item(db_session, "Atorva 10")
 
     med = client.post(
         "/api/v1/medicines",
         headers=headers,
         json={
-            "is_custom": True,
-            "display_name": "Atorva 10",
-            "strength": "10 mg",
-            "dosage_form": "tablet",
+            "catalogue_id": cat_id,
             "dose_per_intake": "1.00",
             "dose_unit": "tablet",
             "stock_unit": "tablet",

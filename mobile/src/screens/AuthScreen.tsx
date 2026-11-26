@@ -328,7 +328,7 @@ export function AuthScreen({
               {verifyMode ? (
                 <>
                   <Text className="text-[22px] font-extrabold text-ink mb-1">
-                    Verify Your Email
+                    {t(lang, 'verifyEmailTitle')}
                   </Text>
                   <Text className="text-[14.5px] text-ink-muted leading-6 mb-4">
                     {verifyFromRegister
@@ -374,7 +374,7 @@ export function AuthScreen({
                   />
 
                   <TouchableOpacity onPress={handleResendOtp} className="mt-4 py-2 items-center">
-                    <Text className="text-[15px] font-bold text-brand">Resend 6-digit code</Text>
+                    <Text className="text-[15px] font-bold text-brand">{t(lang, 'resendOtp')}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -385,12 +385,12 @@ export function AuthScreen({
                     }}
                     className="mt-1 py-2 items-center"
                   >
-                    <Text className="text-[14px] font-semibold text-ink-soft">Back to Sign In</Text>
+                    <Text className="text-[14px] font-semibold text-ink-soft">{t(lang, 'backToSignIn')}</Text>
                   </TouchableOpacity>
                 </>
               ) : forgotMode ? (
                 <>
-                  <Text className="text-[22px] font-extrabold text-ink mb-1">Reset Password</Text>
+                  <Text className="text-[22px] font-extrabold text-ink mb-1">{t(lang, 'resetPasswordTitle')}</Text>
                   <Text className="text-[14.5px] text-ink-muted leading-6 mb-4">
                     {resetRequested
                       ? `Enter the 6-digit code sent to ${email.trim()} and choose a new password.`
@@ -465,7 +465,7 @@ export function AuthScreen({
                     }}
                     className="mt-4 py-2 items-center"
                   >
-                    <Text className="text-[14.5px] font-bold text-brand">Back to Sign In</Text>
+                    <Text className="text-[14.5px] font-bold text-brand">{t(lang, 'backToSignIn')}</Text>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -555,7 +555,7 @@ export function AuthScreen({
                       }}
                       className="self-end mb-4 -mt-1 py-1"
                     >
-                      <Text className="text-[14px] font-bold text-brand">Forgot Password?</Text>
+                      <Text className="text-[14px] font-bold text-brand">{t(lang, 'forgotPassword')}</Text>
                     </TouchableOpacity>
                   )}
 
@@ -571,7 +571,7 @@ export function AuthScreen({
           </FadeSlideIn>
 
           <TouchableOpacity onPress={onReplayIntro} className="mt-2 py-2 items-center">
-            <Text className="text-[14px] font-semibold text-ink-soft">View App Intro Guide</Text>
+            <Text className="text-[14px] font-semibold text-ink-soft">{t(lang, 'viewIntroGuide')}</Text>
           </TouchableOpacity>
         </View>
       </View>

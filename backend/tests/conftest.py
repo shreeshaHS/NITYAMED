@@ -10,13 +10,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 from app.core.database import Base, get_db
+from app.core.rate_limit import reset_rate_limiter
 from app.main import create_app
 
 
 @pytest.fixture(autouse=True)
 def _isolate_test_settings(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
     """Ensure tests run with deterministic dev defaults instead of local .env SMTP credentials."""
+    reset_rate_limiter()
     monkeypatch.setenv("REQUIRE_EMAIL_VERIFICATION", "false")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ENABLED", "false")
     monkeypatch.setenv("EMAIL_WEBHOOK_URL", "")
     monkeypatch.setenv("EMAIL_WEBHOOK_SECRET", "")
     monkeypatch.setenv("SMTP_HOST", "")

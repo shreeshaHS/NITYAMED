@@ -44,6 +44,13 @@ def test_seed_catalogue_is_idempotent_and_searchable(
     assert len(items) == 1
     assert items[0]["generic_name"] == "Paracetamol (Acetaminophen)"
 
+    # Company-only search when user doesn't remember brand or salt name
+    company_search = client.get(
+        "/api/v1/catalogue/search?q=Micro%20Labs&include_external=false", headers=headers
+    )
+    assert company_search.status_code == 200
+    assert any(item["brand_name"] == "Dolo 650" for item in company_search.json())
+
     inhaler_search = client.get("/api/v1/catalogue/search?form=inhaler", headers=headers)
     assert inhaler_search.status_code == 200
     assert inhaler_search.json()[0]["brand_name"] == "Asthalin Inhaler"
@@ -116,16 +123,20 @@ def test_personal_medicine_strip_and_loose_stock_separation(
     assert detail.json()["education_notice"] is None
 
 
-def test_custom_medicine_fallback_and_ownership_isolation(client: TestClient) -> None:
+def test_verified_only_policy_and_ownership_isolation(
+    client: TestClient, db_session: Session
+) -> None:
+    seed_medicine_catalogue(db_session)
     headers_a = _auth_header(client, "owner@example.com")
     headers_b = _auth_header(client, "other@example.com")
 
-    custom_resp = client.post(
+    # 1. Direct unauthorized/unverified custom medicine scheduling must be blocked (403)
+    blocked_custom = client.post(
         "/api/v1/medicines",
         headers=headers_a,
         json={
             "is_custom": True,
-            "display_name": "Herbal Compound X",
+            "display_name": "Unauthorized Compound X",
             "strength": "10 ml",
             "dosage_form": "syrup",
             "dose_per_intake": "5.00",
@@ -134,13 +145,74 @@ def test_custom_medicine_fallback_and_ownership_isolation(client: TestClient) ->
             "initial_loose_units": "100.00",
         },
     )
-    assert custom_resp.status_code == 201
-    med_id = custom_resp.json()["id"]
+    assert blocked_custom.status_code == 403
+    assert blocked_custom.json()["error"]["code"] == "UNAUTHORIZED_MEDICINE_NOT_ALLOWED"
 
-    detail_a = client.get(f"/api/v1/medicines/{med_id}", headers=headers_a)
-    assert detail_a.status_code == 200
-    assert detail_a.json()["education"] is None
-    assert "Unverified custom entry" in detail_a.json()["education_notice"]
+    # 2. Prohibited/banned substance in verification request must be blocked by policy (403)
+    banned_req = client.post(
+        "/api/v1/catalogue/requests",
+        headers=headers_a,
+        json={
+            "brand_name": "Sibutramine Slim 15",
+            "generic_name": "Sibutramine",
+            "strength": "15 mg",
+            "dosage_form": "capsule",
+        },
+    )
+    assert banned_req.status_code == 403
+    assert banned_req.json()["error"]["code"] == "REGULATORY_POLICY_VIOLATION"
+
+    # 3. Legitimate missing medicine submitted for review stays unverified & unschedulable until Admin approves
+    req_resp = client.post(
+        "/api/v1/catalogue/requests",
+        headers=headers_a,
+        json={
+            "brand_name": "Triphala Churna Verified Test",
+            "generic_name": "Triphala Herbal Blend",
+            "strength": "500 mg",
+            "dosage_form": "tablet",
+            "manufacturer": "Kottakkal",
+        },
+    )
+    assert req_resp.status_code == 201
+    pending_cat_id = req_resp.json()["id"]
+    assert req_resp.json()["is_verified"] is False
+    assert (
+        client.get(
+            "/api/v1/catalogue/search?q=Triphala&include_external=false", headers=headers_a
+        ).json()
+        == []
+    )
+    blocked_unverified = client.post(
+        "/api/v1/medicines",
+        headers=headers_a,
+        json={
+            "catalogue_id": pending_cat_id,
+            "dose_per_intake": "1.00",
+            "dose_unit": "tablet",
+            "stock_unit": "tablet",
+        },
+    )
+    assert blocked_unverified.status_code == 403
+    assert blocked_unverified.json()["error"]["code"] == "UNVERIFIED_MEDICINE_NOT_ALLOWED"
+
+    # 4. Verified catalogue medicine schedules cleanly and enforces strict user ownership isolation
+    cat_id = client.get(
+        "/api/v1/catalogue/search?q=Dolo&include_external=false", headers=headers_a
+    ).json()[0]["id"]
+    med_resp = client.post(
+        "/api/v1/medicines",
+        headers=headers_a,
+        json={
+            "catalogue_id": cat_id,
+            "dose_per_intake": "1.00",
+            "dose_unit": "tablet",
+            "stock_unit": "tablet",
+            "initial_packs": 1,
+        },
+    )
+    assert med_resp.status_code == 201
+    med_id = med_resp.json()["id"]
 
     # Another user cannot read or update User A's medicine
     assert client.get(f"/api/v1/medicines/{med_id}", headers=headers_b).status_code == 404

@@ -34,6 +34,17 @@ class CatalogueItemResponse(BaseModel):
     is_verified: bool
 
 
+class CatalogueVerificationRequest(BaseModel):
+    """Patient request to have a missing medicine reviewed and verified by an administrator."""
+
+    brand_name: str = Field(min_length=2, max_length=200)
+    generic_name: str | None = Field(default=None, max_length=200)
+    strength: str = Field(min_length=1, max_length=100)
+    dosage_form: DosageForm
+    manufacturer: str | None = Field(default=None, max_length=200)
+    standard_pack_size: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
+
+
 class MedicineEducationResponse(BaseModel):
     """Verified, source-attributed patient education entry."""
 

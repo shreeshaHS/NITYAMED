@@ -6,6 +6,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -24,16 +25,25 @@ import { api } from '../services/api';
 import { offlineDb } from '../services/offlineDb';
 import { CardShadow, Colors } from '../theme';
 import type { DailyDoseItem, DoseStatus, SupportedLang } from '../types/api';
+import { getLocalDateString } from '../utils/date';
 import { generateUuid } from '../utils/uuid';
 
 interface TodayScreenProps {
   lang: SupportedLang;
   displayName?: string;
   doses: DailyDoseItem[];
+  selectedDate: string;
+  onSelectDate: (dateStr: string) => void;
   isOnline: boolean;
   pendingSyncCount: number;
   onRefresh: () => Promise<void>;
   onSyncNow: () => Promise<void>;
+}
+
+function shiftLocalDate(offsetDays: number): string {
+  const dt = new Date();
+  dt.setDate(dt.getDate() + offsetDays);
+  return getLocalDateString(dt);
 }
 
 type DayBucket = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -70,6 +80,8 @@ export function TodayScreen({
   lang,
   displayName,
   doses,
+  selectedDate,
+  onSelectDate,
   isOnline,
   pendingSyncCount,
   onRefresh,
@@ -193,13 +205,13 @@ export function TodayScreen({
       {/* Hero Continuity Banner */}
       <FadeSlideIn>
         <View
-          className="bg-brand-dark rounded-[28px] p-6 mb-5"
+          className="bg-brand-dark rounded-[28px] p-6 mb-4"
           style={CardShadow}
         >
           <View className="flex-row items-start justify-between mb-4">
             <View className="flex-1 pr-3">
               <Text className="text-[12.5px] font-bold text-emerald-300 uppercase tracking-wider mb-1">
-                {new Date().toLocaleDateString(undefined, {
+                {new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, {
                   weekday: 'long',
                   month: 'short',
                   day: 'numeric',
@@ -214,7 +226,9 @@ export function TodayScreen({
               <Text className="text-[20px] font-extrabold text-white">
                 {takenCount}/{totalCount}
               </Text>
-              <Text className="text-[11px] font-semibold text-emerald-200">Confirmed</Text>
+              <Text className="text-[11px] font-semibold text-emerald-200">
+                {t(lang, 'confirmedLabel')}
+              </Text>
             </View>
           </View>
 
@@ -236,6 +250,36 @@ export function TodayScreen({
           </View>
         </View>
       </FadeSlideIn>
+
+      {/* Yesterday / Today / Tomorrow Switcher */}
+      <View className="flex-row gap-2 mb-4">
+        {(
+          [
+            { dateStr: shiftLocalDate(-1), label: t(lang, 'yesterdayLabel') },
+            { dateStr: shiftLocalDate(0), label: t(lang, 'todayLabel') },
+            { dateStr: shiftLocalDate(1), label: t(lang, 'tomorrowLabel') },
+          ] as const
+        ).map((dayOpt) => {
+          const active = selectedDate === dayOpt.dateStr;
+          return (
+            <TouchableOpacity
+              key={dayOpt.label}
+              onPress={() => onSelectDate(dayOpt.dateStr)}
+              className={`flex-1 py-2.5 px-3 rounded-2xl border items-center ${
+                active ? 'bg-brand border-brand' : 'bg-white border-slate-200'
+              }`}
+            >
+              <Text
+                className={`text-[13.5px] font-bold ${
+                  active ? 'text-white' : 'text-ink-muted'
+                }`}
+              >
+                {dayOpt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       {pendingSyncCount > 0 && (
         <FadeSlideIn delay={60}>

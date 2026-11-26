@@ -141,6 +141,96 @@ def create_schedule_version(
     return ScheduleVersionResponse.model_validate(schedule)
 
 
+def ensure_rolling_horizon_for_medicine(
+    db: Session,
+    med: PersonalMedicine,
+    target_date: date | None = None,
+    horizon_days: int = 14,
+) -> int:
+    """Idempotently top up future DoseEvents for an active schedule up to target_date / +14d."""
+    if med.status != "active":
+        return 0
+    active_sched = db.scalar(
+        select(ScheduleVersion).where(
+            ScheduleVersion.personal_med_id == med.id,
+            ScheduleVersion.effective_to.is_(None),
+        )
+    )
+    if active_sched is None or active_sched.is_prn:
+        return 0
+
+    tz_name, _, _ = _get_user_profile_settings(db, med.user_id)
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(UTC)
+    today_local = now.astimezone(tz).date()
+    desired_end = max(target_date or today_local, today_local + timedelta(days=horizon_days - 1))
+    from_date = max(today_local, active_sched.start_date)
+    end_date = min(desired_end, active_sched.end_date) if active_sched.end_date else desired_end
+    if end_date < from_date:
+        return 0
+
+    window_start_utc = datetime.combine(from_date, datetime.min.time(), tzinfo=tz).astimezone(UTC)
+    existing_ts = {
+        _as_utc(ts)
+        for ts in db.scalars(
+            select(DoseEvent.scheduled_at).where(
+                DoseEvent.schedule_version_id == active_sched.id,
+                DoseEvent.scheduled_at >= window_start_utc,
+            )
+        ).all()
+    }
+
+    added = 0
+    cursor = from_date
+    while cursor <= end_date:
+        slots = daily_slots_for_date(
+            frequency_type=active_sched.frequency_type,
+            schedule_rules=active_sched.schedule_rules,
+            start_date=active_sched.start_date,
+            end_date=active_sched.end_date,
+            is_prn=active_sched.is_prn,
+            target_date=cursor,
+        )
+        for slot_time, dose_qty in slots:
+            scheduled_utc = datetime.combine(cursor, slot_time, tzinfo=tz).astimezone(UTC)
+            if scheduled_utc not in existing_ts:
+                db.add(
+                    DoseEvent(
+                        user_id=med.user_id,
+                        personal_med_id=med.id,
+                        schedule_version_id=active_sched.id,
+                        scheduled_at=scheduled_utc,
+                        expected_qty=dose_qty,
+                        status="pending",
+                    )
+                )
+                existing_ts.add(scheduled_utc)
+                added += 1
+        cursor += timedelta(days=1)
+
+    if added > 0:
+        db.flush()
+    return added
+
+
+def ensure_rolling_horizon_for_user(
+    db: Session, user_id: UUID, target_date: date | None = None
+) -> int:
+    """Extend rolling dose horizons for all active medicines owned by user_id."""
+    meds = db.scalars(
+        select(PersonalMedicine).where(
+            PersonalMedicine.user_id == user_id,
+            PersonalMedicine.status == "active",
+        )
+    ).all()
+    added = 0
+    for med in meds:
+        added += ensure_rolling_horizon_for_medicine(db, med, target_date=target_date)
+    if added > 0:
+        db.commit()
+    return added
+
+
 def list_schedule_versions(
     db: Session, user: User, med_id: UUID
 ) -> list[ScheduleVersionResponse]:
@@ -205,13 +295,14 @@ def _build_daily_item(dose: DoseEvent, med: PersonalMedicine) -> DailyDoseItemRe
 def get_daily_schedule(
     db: Session, user: User, target_date: date | None = None
 ) -> list[DailyDoseItemResponse]:
-    """Return chronological dose events for target_date in the patient's timezone."""
+    """Return chronological dose events for target_date after extending rolling horizons."""
     tz_name, _, _ = _get_user_profile_settings(db, user.id)
     tz = ZoneInfo(tz_name)
     now = datetime.now(UTC)
-    expire_overdue_doses(db, user_id=user.id, now=now)
-
     local_day = target_date or now.astimezone(tz).date()
+    if local_day >= now.astimezone(tz).date():
+        ensure_rolling_horizon_for_user(db, user.id, target_date=local_day)
+    expire_overdue_doses(db, user_id=user.id, now=now)
     day_start_utc = datetime.combine(local_day, datetime.min.time(), tzinfo=tz).astimezone(UTC)
     day_end_utc = day_start_utc + timedelta(days=1)
 
@@ -352,7 +443,8 @@ def skip_dose(
 def snooze_dose(
     db: Session, user: User, dose_id: UUID, payload: DoseSnoozeRequest
 ) -> DoseActionResponse:
-    """Snooze a pending or already-snoozed dose reminder."""
+    """Snooze a pending or already-snoozed dose reminder if not expired."""
+    expire_overdue_doses(db, user_id=user.id)
     dose, med = _get_owned_dose(db, user, dose_id)
     if dose.status not in {"pending", "snoozed"}:
         raise AppError(409, "INVALID_DOSE_STATE", f"Cannot snooze a dose in status '{dose.status}'")

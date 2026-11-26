@@ -113,7 +113,9 @@ export async function rescheduleLocalDoseAlarms(
 
   for (const dose of doses) {
     if (dose.status !== 'pending' && dose.status !== 'snoozed') continue;
-    const triggerMs = new Date(dose.scheduled_at).getTime();
+    const targetIso =
+      dose.status === 'snoozed' && dose.snoozed_until ? dose.snoozed_until : dose.scheduled_at;
+    const triggerMs = new Date(targetIso).getTime();
     if (Number.isNaN(triggerMs) || triggerMs <= nowMs + 5000) continue;
 
     const { title, body } = formatDoseNotificationText(dose, lockscreenPrivacy);

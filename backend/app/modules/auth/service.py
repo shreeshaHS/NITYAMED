@@ -162,6 +162,7 @@ def register_patient(db: Session, payload: RegisterRequest) -> TokenResponse:
                 pending.display_name = payload.display_name.strip()
                 pending.preferred_lang = payload.preferred_lang
                 pending.code_hash = hash_token(otp)
+                pending.failed_attempts = 0
                 pending.expires_at = expires_at
 
         db.commit()
@@ -235,7 +236,19 @@ def verify_email_otp(db: Session, email: str, otp_code: str) -> TokenResponse:
         select(PendingRegistration).where(PendingRegistration.email == normalized_email)
     )
     if pending is not None:
-        if pending.code_hash != hash_token(otp_code) or _as_utc(pending.expires_at) <= now:
+        if _as_utc(pending.expires_at) <= now:
+            raise AppError(400, "INVALID_VERIFICATION_CODE", "Verification code is invalid or expired")
+        if pending.code_hash != hash_token(otp_code):
+            pending.failed_attempts = (pending.failed_attempts or 0) + 1
+            if pending.failed_attempts >= 5:
+                db.delete(pending)
+                db.commit()
+                raise AppError(
+                    429,
+                    "OTP_ATTEMPTS_EXCEEDED",
+                    "Too many incorrect verification attempts. Please register again to get a new code.",
+                )
+            db.commit()
             raise AppError(400, "INVALID_VERIFICATION_CODE", "Verification code is invalid or expired")
 
         existing = db.scalar(select(User).where(User.email == normalized_email))
@@ -358,6 +371,7 @@ def resend_verification_otp(db: Session, email: str) -> dict:
                 f"Unable to resend verification code to {normalized_email}: {detail}",
             )
         pending.code_hash = hash_token(otp)
+        pending.failed_attempts = 0
         pending.expires_at = datetime.now(UTC) + timedelta(minutes=15)
         db.commit()
         return {

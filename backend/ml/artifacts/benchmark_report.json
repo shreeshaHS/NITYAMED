@@ -1,549 +1,116 @@
 {
-  "dataset_size": 615,
-  "unique_families": 305,
+  "dataset_size": 826,
+  "unique_families": 397,
   "n_splits": 5,
   "models": {
     "word_tfidf_logreg": {
-      "accuracy": 0.7659,
-      "macro_f1": 0.7889,
-      "macro_precision": 0.8339,
-      "macro_recall": 0.768,
-      "oos_recall": 0.6714,
+      "accuracy": 0.6828,
+      "macro_f1": 0.7318,
+      "macro_precision": 0.8769,
+      "macro_recall": 0.6668,
+      "oos_recall": 0.8675,
       "per_language": {
         "code_switch": {
-          "count": 48,
-          "accuracy": 0.9792,
-          "macro_f1": 0.8788
+          "count": 62,
+          "accuracy": 0.9516,
+          "macro_f1": 0.8962
         },
         "en": {
-          "count": 133,
-          "accuracy": 0.797,
-          "macro_f1": 0.826
+          "count": 194,
+          "accuracy": 0.732,
+          "macro_f1": 0.7677
         },
         "hi": {
-          "count": 116,
-          "accuracy": 0.6638,
-          "macro_f1": 0.6919
+          "count": 165,
+          "accuracy": 0.5818,
+          "macro_f1": 0.5844
         },
         "hi_rom": {
-          "count": 94,
-          "accuracy": 0.8298,
-          "macro_f1": 0.8254
+          "count": 112,
+          "accuracy": 0.6964,
+          "macro_f1": 0.7489
         },
         "kn": {
-          "count": 128,
-          "accuracy": 0.6562,
-          "macro_f1": 0.6976
+          "count": 177,
+          "accuracy": 0.565,
+          "macro_f1": 0.5678
         },
         "kn_rom": {
-          "count": 96,
-          "accuracy": 0.8229,
-          "macro_f1": 0.822
-        }
-      },
-      "labels": [
-        "adherence_status",
-        "check_stock",
-        "confirm_dose",
-        "medicine_info",
-        "next_dose",
-        "out_of_scope",
-        "refill_check",
-        "today_schedule",
-        "update_stock_purchase"
-      ],
-      "confusion_matrix": [
-        [
-          44,
-          0,
-          5,
-          0,
-          0,
-          16,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          64,
-          0,
-          0,
-          0,
-          16,
-          1,
-          1,
-          1
-        ],
-        [
-          2,
-          0,
-          60,
-          0,
-          0,
-          6,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          52,
-          0,
-          10,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          55,
-          5,
-          2,
-          0,
-          0
-        ],
-        [
-          4,
-          3,
-          3,
-          1,
-          0,
-          47,
-          2,
-          9,
-          1
-        ],
-        [
-          0,
-          5,
-          0,
-          0,
-          1,
-          15,
-          39,
-          3,
-          1
-        ],
-        [
-          1,
-          1,
-          0,
-          0,
-          0,
-          18,
-          0,
-          54,
-          0
-        ],
-        [
-          0,
-          1,
-          1,
-          0,
-          0,
-          6,
-          0,
-          0,
-          56
-        ]
-      ]
-    },
-    "hybrid_tfidf_logreg": {
-      "accuracy": 0.8211,
-      "macro_f1": 0.8288,
-      "macro_precision": 0.843,
-      "macro_recall": 0.8226,
-      "oos_recall": 0.6857,
-      "per_language": {
-        "code_switch": {
-          "count": 48,
-          "accuracy": 1.0,
-          "macro_f1": 1.0
-        },
-        "en": {
-          "count": 133,
-          "accuracy": 0.8195,
-          "macro_f1": 0.8336
-        },
-        "hi": {
-          "count": 116,
-          "accuracy": 0.75,
-          "macro_f1": 0.764
-        },
-        "hi_rom": {
-          "count": 94,
-          "accuracy": 0.8511,
-          "macro_f1": 0.8395
-        },
-        "kn": {
-          "count": 128,
-          "accuracy": 0.7344,
-          "macro_f1": 0.7542
-        },
-        "kn_rom": {
-          "count": 96,
-          "accuracy": 0.9062,
-          "macro_f1": 0.9072
-        }
-      },
-      "labels": [
-        "adherence_status",
-        "check_stock",
-        "confirm_dose",
-        "medicine_info",
-        "next_dose",
-        "out_of_scope",
-        "refill_check",
-        "today_schedule",
-        "update_stock_purchase"
-      ],
-      "confusion_matrix": [
-        [
-          48,
-          1,
-          9,
-          0,
-          0,
-          7,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          71,
-          0,
-          0,
-          0,
-          5,
-          0,
-          1,
-          6
-        ],
-        [
-          3,
-          0,
-          59,
-          0,
-          0,
-          4,
-          0,
-          1,
-          1
-        ],
-        [
-          1,
-          0,
-          0,
-          57,
-          0,
-          4,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          0,
-          0,
-          0,
-          59,
-          3,
-          0,
-          0,
-          0
-        ],
-        [
-          5,
-          4,
-          3,
-          0,
-          0,
-          48,
-          1,
-          8,
-          1
-        ],
-        [
-          0,
-          6,
-          0,
-          0,
-          1,
-          7,
-          46,
-          2,
-          2
-        ],
-        [
-          1,
-          1,
-          1,
-          0,
-          0,
-          9,
-          1,
-          61,
-          0
-        ],
-        [
-          0,
-          3,
-          0,
-          0,
-          0,
-          5,
-          0,
-          0,
-          56
-        ]
-      ]
-    },
-    "hybrid_tfidf_calibrated_svm": {
-      "accuracy": 0.8407,
-      "macro_f1": 0.8391,
-      "macro_precision": 0.8459,
-      "macro_recall": 0.8424,
-      "oos_recall": 0.5571,
-      "per_language": {
-        "code_switch": {
-          "count": 48,
-          "accuracy": 1.0,
-          "macro_f1": 1.0
-        },
-        "en": {
-          "count": 133,
-          "accuracy": 0.8346,
-          "macro_f1": 0.8437
-        },
-        "hi": {
-          "count": 116,
-          "accuracy": 0.7586,
-          "macro_f1": 0.7565
-        },
-        "hi_rom": {
-          "count": 94,
-          "accuracy": 0.883,
-          "macro_f1": 0.864
-        },
-        "kn": {
-          "count": 128,
-          "accuracy": 0.7734,
-          "macro_f1": 0.7721
-        },
-        "kn_rom": {
-          "count": 96,
-          "accuracy": 0.9167,
-          "macro_f1": 0.9162
-        }
-      },
-      "labels": [
-        "adherence_status",
-        "check_stock",
-        "confirm_dose",
-        "medicine_info",
-        "next_dose",
-        "out_of_scope",
-        "refill_check",
-        "today_schedule",
-        "update_stock_purchase"
-      ],
-      "confusion_matrix": [
-        [
-          50,
-          2,
-          12,
-          0,
-          0,
-          1,
-          0,
-          3,
-          0
-        ],
-        [
-          0,
-          74,
-          0,
-          1,
-          0,
-          1,
-          1,
-          1,
-          5
-        ],
-        [
-          2,
-          0,
-          64,
-          0,
-          0,
-          0,
-          0,
-          1,
-          1
-        ],
-        [
-          1,
-          1,
-          0,
-          60,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        [
-          0,
-          1,
-          0,
-          0,
-          60,
-          1,
-          0,
-          0,
-          0
-        ],
-        [
-          5,
-          6,
-          2,
-          4,
-          0,
-          39,
-          5,
-          8,
-          1
-        ],
-        [
-          0,
-          6,
-          0,
-          0,
-          1,
-          3,
-          49,
-          2,
-          3
-        ],
-        [
-          1,
-          1,
-          0,
-          3,
-          0,
-          3,
-          1,
-          64,
-          1
-        ],
-        [
-          0,
-          4,
-          1,
-          2,
-          0,
-          0,
-          0,
-          0,
-          57
-        ]
-      ]
-    },
-    "hybrid_tfidf_soft_ensemble": {
-      "accuracy": 0.8325,
-      "macro_f1": 0.8331,
-      "macro_precision": 0.8388,
-      "macro_recall": 0.8345,
-      "oos_recall": 0.6,
-      "per_language": {
-        "code_switch": {
-          "count": 48,
-          "accuracy": 1.0,
-          "macro_f1": 1.0
-        },
-        "en": {
-          "count": 133,
-          "accuracy": 0.8346,
-          "macro_f1": 0.8419
-        },
-        "hi": {
           "count": 116,
           "accuracy": 0.7672,
-          "macro_f1": 0.766
-        },
-        "hi_rom": {
-          "count": 94,
-          "accuracy": 0.8617,
-          "macro_f1": 0.8417
-        },
-        "kn": {
-          "count": 128,
-          "accuracy": 0.7578,
-          "macro_f1": 0.7585
-        },
-        "kn_rom": {
-          "count": 96,
-          "accuracy": 0.8958,
-          "macro_f1": 0.8947
+          "macro_f1": 0.8113
         }
       },
       "labels": [
         "adherence_status",
         "check_stock",
+        "company_lookup",
         "confirm_dose",
+        "greeting_help",
         "medicine_info",
         "next_dose",
         "out_of_scope",
         "refill_check",
+        "skip_dose",
+        "snooze_dose",
         "today_schedule",
         "update_stock_purchase"
       ],
       "confusion_matrix": [
         [
           47,
-          2,
-          14,
           0,
-          0,
-          3,
           0,
           2,
+          0,
+          0,
+          0,
+          25,
+          0,
+          2,
+          0,
+          1,
           0
         ],
         [
-          0,
-          73,
-          0,
-          1,
-          0,
-          2,
-          0,
-          1,
-          6
-        ],
-        [
-          3,
           0,
           63,
           0,
           0,
           0,
           0,
-          1,
-          1
-        ],
-        [
-          1,
+          0,
+          28,
           1,
           0,
-          59,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          23,
+          0,
+          0,
+          3,
+          0,
+          9,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          52,
+          0,
+          0,
+          0,
+          20,
           0,
           1,
           0,
@@ -555,58 +122,891 @@
           0,
           0,
           0,
+          12,
+          0,
+          0,
+          14,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          53,
+          0,
+          18,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          57,
+          12,
+          1,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          2,
+          1,
+          0,
+          1,
+          1,
+          1,
+          1,
+          72,
+          0,
+          0,
+          0,
+          4,
+          0
+        ],
+        [
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          1,
+          26,
+          39,
+          0,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          9,
+          0,
+          21,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          12,
+          0,
+          0,
+          20,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          37,
+          0,
+          0,
+          0,
+          44,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          12,
+          0,
+          0,
+          0,
+          0,
+          61
+        ]
+      ]
+    },
+    "hybrid_tfidf_logreg": {
+      "accuracy": 0.8245,
+      "macro_f1": 0.8314,
+      "macro_precision": 0.8928,
+      "macro_recall": 0.801,
+      "oos_recall": 0.8554,
+      "per_language": {
+        "code_switch": {
+          "count": 62,
+          "accuracy": 1.0,
+          "macro_f1": 1.0
+        },
+        "en": {
+          "count": 194,
+          "accuracy": 0.8505,
+          "macro_f1": 0.8576
+        },
+        "hi": {
+          "count": 165,
+          "accuracy": 0.7576,
+          "macro_f1": 0.7434
+        },
+        "hi_rom": {
+          "count": 112,
+          "accuracy": 0.8393,
+          "macro_f1": 0.8564
+        },
+        "kn": {
+          "count": 177,
+          "accuracy": 0.7571,
+          "macro_f1": 0.7324
+        },
+        "kn_rom": {
+          "count": 116,
+          "accuracy": 0.8707,
+          "macro_f1": 0.858
+        }
+      },
+      "labels": [
+        "adherence_status",
+        "check_stock",
+        "company_lookup",
+        "confirm_dose",
+        "greeting_help",
+        "medicine_info",
+        "next_dose",
+        "out_of_scope",
+        "refill_check",
+        "skip_dose",
+        "snooze_dose",
+        "today_schedule",
+        "update_stock_purchase"
+      ],
+      "confusion_matrix": [
+        [
+          57,
+          1,
+          0,
+          5,
+          0,
+          0,
+          0,
+          9,
+          0,
+          4,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          83,
+          0,
+          0,
+          0,
+          0,
+          0,
+          9,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          29,
+          0,
+          0,
+          1,
+          0,
+          6,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          5,
+          0,
+          0,
+          66,
+          0,
+          0,
+          0,
+          5,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          12,
+          0,
+          0,
+          14,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          62,
+          0,
+          9,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          62,
+          5,
+          3,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          3,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          71,
+          1,
+          0,
+          0,
+          5,
+          0
+        ],
+        [
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          56,
+          0,
+          0,
+          2,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          4,
+          0,
+          26,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          0,
+          0,
+          24,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          15,
+          0,
+          0,
+          0,
+          65,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          68
+        ]
+      ]
+    },
+    "hybrid_tfidf_calibrated_svm": {
+      "accuracy": 0.8765,
+      "macro_f1": 0.8791,
+      "macro_precision": 0.8776,
+      "macro_recall": 0.8829,
+      "oos_recall": 0.6747,
+      "per_language": {
+        "code_switch": {
+          "count": 62,
+          "accuracy": 1.0,
+          "macro_f1": 1.0
+        },
+        "en": {
+          "count": 194,
+          "accuracy": 0.8763,
+          "macro_f1": 0.8791
+        },
+        "hi": {
+          "count": 165,
+          "accuracy": 0.8242,
+          "macro_f1": 0.8095
+        },
+        "hi_rom": {
+          "count": 112,
+          "accuracy": 0.875,
+          "macro_f1": 0.8793
+        },
+        "kn": {
+          "count": 177,
+          "accuracy": 0.8644,
+          "macro_f1": 0.8636
+        },
+        "kn_rom": {
+          "count": 116,
+          "accuracy": 0.9052,
+          "macro_f1": 0.9162
+        }
+      },
+      "labels": [
+        "adherence_status",
+        "check_stock",
+        "company_lookup",
+        "confirm_dose",
+        "greeting_help",
+        "medicine_info",
+        "next_dose",
+        "out_of_scope",
+        "refill_check",
+        "skip_dose",
+        "snooze_dose",
+        "today_schedule",
+        "update_stock_purchase"
+      ],
+      "confusion_matrix": [
+        [
           60,
           2,
           0,
+          8,
+          0,
+          0,
+          0,
+          1,
+          0,
+          5,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          88,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          35,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
           0,
           0
         ],
         [
-          5,
-          6,
           3,
-          2,
           0,
-          42,
-          3,
-          8,
+          0,
+          70,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
           1
         ],
         [
           0,
-          6,
+          0,
+          0,
+          0,
+          21,
+          1,
+          0,
+          3,
           0,
           0,
           1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          69,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          66,
+          1,
+          3,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          6,
+          2,
+          0,
+          0,
           4,
-          47,
+          1,
           2,
-          4
+          56,
+          2,
+          0,
+          2,
+          8,
+          0
         ],
         [
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          3,
+          2,
+          57,
+          0,
+          0,
+          3,
+          3
+        ],
+        [
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          29,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          31,
+          0,
+          0
+        ],
+        [
+          4,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
           2,
           1,
+          0,
+          0,
+          75,
+          0
+        ],
+        [
+          0,
+          2,
           1,
           1,
           0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          67
+        ]
+      ]
+    },
+    "hybrid_tfidf_soft_ensemble": {
+      "accuracy": 0.868,
+      "macro_f1": 0.8718,
+      "macro_precision": 0.8835,
+      "macro_recall": 0.8656,
+      "oos_recall": 0.759,
+      "per_language": {
+        "code_switch": {
+          "count": 62,
+          "accuracy": 1.0,
+          "macro_f1": 1.0
+        },
+        "en": {
+          "count": 194,
+          "accuracy": 0.8608,
+          "macro_f1": 0.8707
+        },
+        "hi": {
+          "count": 165,
+          "accuracy": 0.8182,
+          "macro_f1": 0.7979
+        },
+        "hi_rom": {
+          "count": 112,
+          "accuracy": 0.8929,
+          "macro_f1": 0.9042
+        },
+        "kn": {
+          "count": 177,
+          "accuracy": 0.8362,
+          "macro_f1": 0.7968
+        },
+        "kn_rom": {
+          "count": 116,
+          "accuracy": 0.9052,
+          "macro_f1": 0.9162
+        }
+      },
+      "labels": [
+        "adherence_status",
+        "check_stock",
+        "company_lookup",
+        "confirm_dose",
+        "greeting_help",
+        "medicine_info",
+        "next_dose",
+        "out_of_scope",
+        "refill_check",
+        "skip_dose",
+        "snooze_dose",
+        "today_schedule",
+        "update_stock_purchase"
+      ],
+      "confusion_matrix": [
+        [
+          58,
+          2,
+          0,
+          8,
+          0,
+          0,
+          0,
+          3,
+          0,
           5,
+          0,
           1,
-          62,
+          0
+        ],
+        [
+          0,
+          86,
+          0,
+          0,
+          0,
+          1,
+          0,
+          4,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          34,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          4,
+          0,
+          0,
+          69,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
           1
         ],
         [
+          0,
+          0,
+          0,
+          0,
+          17,
+          1,
+          0,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          68,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          68,
+          1,
+          1,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          3,
+          3,
+          0,
+          0,
+          2,
+          0,
+          2,
+          63,
+          2,
+          0,
+          1,
+          7,
+          0
+        ],
+        [
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          2,
+          4,
+          56,
+          0,
+          0,
+          3,
+          3
+        ],
+        [
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          2,
+          0,
+          28,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          31,
+          0,
+          0
+        ],
+        [
+          6,
+          1,
+          0,
+          0,
+          0,
+          0,
           0,
           3,
           1,
           0,
           0,
-          1,
+          72,
+          0
+        ],
+        [
+          0,
+          2,
           0,
           0,
-          59
+          0,
+          0,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          67
         ]
       ]
     }
   },
-  "selected_model": "hybrid_tfidf_logreg"
+  "selected_model": "hybrid_tfidf_soft_ensemble"
 }

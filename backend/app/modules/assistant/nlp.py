@@ -1,6 +1,7 @@
 """Language detection, normalization, safety rules, ML intent routing, and entity extraction."""
 
 from decimal import Decimal
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 import re
@@ -10,7 +11,7 @@ import joblib
 from app.modules.medicines.models import PersonalMedicine
 
 MODEL_PATH = Path(__file__).resolve().parents[3] / "ml" / "artifacts" / "intent_classifier.joblib"
-OOS_CONFIDENCE_THRESHOLD = 0.25
+OOS_CONFIDENCE_THRESHOLD = 0.28
 
 _SPELLING_FIXES: dict[str, str] = {
     "tablt": "tablet",
@@ -204,6 +205,38 @@ def parse_voice_confirmation_reply(norm_text: str) -> bool | None:
     return None
 
 
+def extract_company_query(norm_text: str) -> str | None:
+    """Extract a pharmaceutical manufacturer/company token from a conversational query."""
+    patterns = (
+        r"(?:made by|manufactured by|from company|company named|company)\s+([a-z0-9\s&-]{2,40})",
+        r"([a-z0-9&-]{3,25})\s+(?:company|pharma|labs|laboratories|medicines|tablets|pills)",
+    )
+    for pat in patterns:
+        m = re.search(pat, norm_text, re.IGNORECASE)
+        if m:
+            candidate = re.sub(
+                r"\b(company|medicines|medicine|tablets|tablet|pills|capsules|syrup|please|only|remember|name|show|find|which|make|makes|what)\b",
+                " ",
+                m.group(1),
+            )
+            cleaned = re.sub(r"\s+", " ", candidate).strip(" ?.,!")
+            if len(cleaned) >= 2:
+                return cleaned
+    return None
+
+
+def is_greeting_or_help(norm_text: str) -> bool:
+    """Detect conversational greetings, gratitude, or help requests."""
+    return bool(
+        re.fullmatch(
+            r"(?:hi|hello|hey|good morning|good afternoon|good evening|namaste|namaskara|vanakkam|"
+            r"thanks|thank you|dhanyavad|dhanyavaad|ನಮಸ್ಕಾರ|ಧನ್ಯವಾದ|ಹಾಯ್|ಹಲೋ|नमस्ते|धन्यवाद|हाय|हेलो|"
+            r"help|what can you do|who are you|how do you work|sahaya|ಸಹಾಯ|मदद)",
+            norm_text,
+        )
+    )
+
+
 def is_unsafe_clinical_query(norm_text: str) -> bool:
     """Detect clinical diagnosis, prescribing, or dose-alteration questions for strict refusal."""
     return any(re.search(pat, norm_text, re.IGNORECASE) for pat in _CLINICAL_UNSAFE_PATTERNS)
@@ -224,6 +257,9 @@ def classify_intent(norm_text: str) -> tuple[str, float, str]:
     """
     if is_unsafe_clinical_query(norm_text):
         return "out_of_scope_clinical", 1.0, "safety_guard"
+
+    if is_greeting_or_help(norm_text):
+        return "greeting_help", 0.99, "rule"
 
     # Fast unambiguous rule shortcuts for clear non-medication queries
     if re.search(
@@ -274,11 +310,47 @@ def extract_quantity_and_unit(norm_text: str) -> tuple[Decimal | None, bool]:
     return None, False
 
 
+_MED_STOPWORDS = {
+    "tablet",
+    "tablets",
+    "capsule",
+    "capsules",
+    "syrup",
+    "injection",
+    "inhaler",
+    "drops",
+    "medicine",
+    "medicines",
+    "pill",
+    "pills",
+    "dose",
+    "doses",
+    "stock",
+    "morning",
+    "afternoon",
+    "evening",
+    "night",
+    "today",
+    "please",
+    "check",
+    "confirm",
+    "taken",
+    "dawai",
+    "goli",
+    "matre",
+    "gulige",
+    "strip",
+    "pack",
+}
+
+
 def match_user_medicines(
     norm_text: str, user_meds: list[PersonalMedicine]
 ) -> list[PersonalMedicine]:
-    """Find user-owned medicines mentioned in the utterance."""
-    matches: list[PersonalMedicine] = []
+    """Find user-owned medicines mentioned in the utterance with ASR fuzzy fallback."""
+    exact_matches: list[PersonalMedicine] = []
+    med_tokens_map: list[tuple[PersonalMedicine, set[str]]] = []
+
     for med in user_meds:
         candidates = [med.display_name.lower()]
         if med.generic_name:
@@ -286,11 +358,33 @@ def match_user_medicines(
         tokens = {
             tok
             for c in candidates
-            for tok in re.split(r"[\s\-]+", c)
-            if len(tok) >= 3 and not tok.isdigit() and tok not in {"tablet", "syrup", "mg", "mcg"}
+            for tok in re.split(r"[\s\-/()]+", c)
+            if len(tok) >= 3 and not tok.isdigit() and tok not in _MED_STOPWORDS
         }
+        med_tokens_map.append((med, tokens))
         if any(c in norm_text for c in candidates) or any(
             re.search(rf"\b{re.escape(tok)}\b", norm_text) for tok in tokens
         ):
-            matches.append(med)
-    return matches
+            exact_matches.append(med)
+
+    if exact_matches:
+        return exact_matches
+
+    utt_tokens = [
+        tok
+        for tok in re.findall(r"[a-z0-9\u0900-\u097f\u0c80-\u0cff]{4,}", norm_text)
+        if tok not in _MED_STOPWORDS and not tok.isdigit()
+    ]
+    if not utt_tokens:
+        return []
+
+    fuzzy_matches: list[PersonalMedicine] = []
+    for med, tokens in med_tokens_map:
+        long_tokens = [tok for tok in tokens if len(tok) >= 4]
+        if any(
+            SequenceMatcher(None, mtok, utok).ratio() >= 0.80
+            for mtok in long_tokens
+            for utok in utt_tokens
+        ):
+            fuzzy_matches.append(med)
+    return fuzzy_matches

@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import re
 import uuid
 from zoneinfo import ZoneInfo
 
@@ -19,6 +20,7 @@ from app.modules.assistant.models import ConversationState
 from app.modules.assistant.nlp import (
     classify_intent,
     detect_language,
+    extract_company_query,
     extract_quantity_and_unit,
     extract_time_window,
     match_user_medicines,
@@ -30,11 +32,11 @@ from app.modules.auth.models import PatientProfile, User
 from app.modules.inventory import service as inventory_service
 from app.modules.inventory.schemas import PurchaseRequest
 from app.modules.medicines.models import MedicineCatalogue, PersonalMedicine
-from app.modules.medicines.service import _ensure_catalogue_education
+from app.modules.medicines.service import _ensure_catalogue_education, search_catalogue
 from app.modules.refill.service import get_refill_predictions
 from app.modules.schedules import service as schedules_service
 from app.modules.schedules.models import DoseEvent
-from app.modules.schedules.schemas import DoseConfirmRequest
+from app.modules.schedules.schemas import DoseConfirmRequest, DoseSkipRequest, DoseSnoozeRequest
 
 _CLINICAL_REFUSAL = {
     "en": (
@@ -103,6 +105,11 @@ _LOCALIZED_PREFIXES: dict[str, dict[str, str]] = {
         "kn": "{name} ಸ್ಟಾಕ್‌ಗೆ {qty} {unit} ಸೇರಿಸಲೇ?",
         "hi": "क्या {name} के स्टॉक में {qty} {unit} जोड़ दें?",
     },
+    "skip_dose_prompt": {
+        "en": "Please confirm: mark {name} ({time}) as skipped today?",
+        "kn": "ದಯವಿಟ್ಟು ದೃಢೀಕರಿಸಿ: ಇಂದಿನ {name} ({time}) ಡೋಸ್ ಅನ್ನು ಸ್ಕಿಪ್ ಎಂದು ಗುರುತಿಸಲೇ?",
+        "hi": "कृपया कन्फर्म करें: क्या आज की {name} ({time}) डोज़ को स्किप मार्क करें?",
+    },
     "cancelled": {
         "en": "Action cancelled. No changes were made.",
         "kn": "ಕ್ರಿಯೆಯನ್ನು ರದ್ದುಗೊಳಿಸಲಾಗಿದೆ. ಯಾವುದೇ ಬದಲಾವಣೆ ಮಾಡಲಾಗಿಲ್ಲ.",
@@ -110,7 +117,7 @@ _LOCALIZED_PREFIXES: dict[str, dict[str, str]] = {
     },
 }
 
-_DIALECT_LLM_FALLBACK_THRESHOLD = 0.45
+_DIALECT_LLM_FALLBACK_THRESHOLD = 0.60
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -187,6 +194,10 @@ def handle_text_query(
     detected_lang = detect_language(raw_text, fallback=pref_lang)
     norm_text = normalize_text(raw_text)
 
+    intent: str = "unknown"
+    confidence: float = 0.0
+    source: str = "rule"
+
     state = _get_or_create_dialogue_state(db, user.id)
     now_utc = datetime.now(UTC)
     if (
@@ -210,7 +221,36 @@ def handle_text_query(
             resp.transcript = transcript
             return resp
 
-    intent, confidence, source = classify_intent(norm_text)
+    active_meds = list(
+        db.scalars(
+            select(PersonalMedicine)
+            .where(PersonalMedicine.user_id == user.id, PersonalMedicine.status == "active")
+            .order_by(PersonalMedicine.display_name.asc())
+        ).all()
+    )
+
+    ctx_existing = dict(state.context_json or {})
+    awaiting_slot = ctx_existing.get("awaiting_slot")
+    awaiting_intent = ctx_existing.get("awaiting_intent")
+    if awaiting_slot and awaiting_intent and _as_utc(state.expires_at) > now_utc:
+        slot_med_match = match_user_medicines(norm_text, active_meds)
+        slot_qty, _ = extract_quantity_and_unit(norm_text)
+        if awaiting_slot == "medicine" and slot_med_match:
+            intent = awaiting_intent
+            confidence = 0.95
+            source = "rule"
+        elif awaiting_slot == "quantity" and slot_qty is not None and slot_qty > 0:
+            intent = awaiting_intent
+            confidence = 0.95
+            source = "rule"
+        elif awaiting_slot == "company":
+            intent = "company_lookup"
+            confidence = 0.95
+            source = "rule"
+
+    if intent == "unknown":
+        intent, confidence, source = classify_intent(norm_text)
+
     llm = llm_adapter or BoundedLLMAdapter()
     tts = tts_adapter or TTSAdapter()
 
@@ -231,17 +271,45 @@ def handle_text_query(
         token: uuid.UUID | None = None,
         proposed_action: dict | None = None,
         med_id_context: uuid.UUID | None = None,
+        next_awaiting_slot: str | None = None,
+        next_awaiting_intent: str | None = None,
+        allow_conversational_llm: bool = True,
     ) -> AssistantResponse:
         ctx = dict(state.context_json or {})
+        history: list[dict[str, str]] = list(ctx.get("history") or [])
+
+        localized_reply = llm.simplify_or_translate(reply, detected_lang)
+        if (
+            allow_conversational_llm
+            and not requires_confirmation
+            and final_source not in {"safety_guard", "clarification"}
+        ):
+            gen = llm.generate_conversational_reply(
+                user_text=raw_text,
+                target_language=detected_lang,
+                grounded_facts=reply,
+                history=history,
+            )
+            if gen:
+                localized_reply = gen
+
+        history.append({"user": raw_text[:200], "assistant": localized_reply[:350]})
+        ctx["history"] = history[-4:]
         if med_id_context is not None:
             ctx["last_medicine_id"] = str(med_id_context)
         ctx["last_language"] = detected_lang
+        if next_awaiting_slot and next_awaiting_intent:
+            ctx["awaiting_slot"] = next_awaiting_slot
+            ctx["awaiting_intent"] = next_awaiting_intent
+        else:
+            ctx.pop("awaiting_slot", None)
+            ctx.pop("awaiting_intent", None)
+
         state.active_intent = final_intent
         state.context_json = ctx
         state.expires_at = datetime.now(UTC) + timedelta(minutes=15)
         db.commit()
 
-        localized_reply = llm.simplify_or_translate(reply, detected_lang)
         audio_b64 = tts.synthesize_base64(localized_reply, detected_lang)
         return AssistantResponse(
             reply_text=localized_reply,
@@ -257,18 +325,121 @@ def handle_text_query(
         )
 
     if intent == "out_of_scope_clinical":
-        return _finalize(_CLINICAL_REFUSAL[detected_lang], final_source="safety_guard")
+        return _finalize(
+            _CLINICAL_REFUSAL[detected_lang],
+            final_source="safety_guard",
+            allow_conversational_llm=False,
+        )
+
+    if intent == "greeting_help":
+        name = profile.display_name if profile else "there"
+        today_local = datetime.now(UTC).astimezone(tz).date()
+        due_cnt = sum(
+            1
+            for d in schedules_service.get_daily_schedule(db, user, target_date=today_local)
+            if d.status in {"pending", "snoozed"}
+        )
+        if detected_lang == "kn":
+            greet_msg = (
+                f"ನಮಸ್ಕಾರ {name}! ನೀವು {len(active_meds)} ಸಕ್ರಿಯ ಔಷಧಿಗಳನ್ನು ಹೊಂದಿದ್ದೀರಿ ಮತ್ತು ಇಂದು {due_cnt} ಬಾಕಿ ಡೋಸ್ ಇದೆ. "
+                "ಇಂದಿನ ವೇಳಾಪಟ್ಟಿ, ಸ್ಟಾಕ್, ರಿಫಿಲ್ ದಿನಾಂಕ, ಕಂಪನಿ ಹುಡುಕಾಟ ಅಥವಾ ಡೋಸ್ ದೃಢೀಕರಣದ ಬಗ್ಗೆ ಕೇಳಿ."
+            )
+        elif detected_lang == "hi":
+            greet_msg = (
+                f"नमस्ते {name}! आपके पास {len(active_meds)} सक्रिय दवाइयां हैं और आज {due_cnt} डोज़ बाकी हैं। "
+                "आप आज के शेड्यूल, स्टॉक, रीफिल, कंपनी द्वारा दवाई खोजने या डोज़ कन्फर्म करने के लिए बोल सकते हैं।"
+            )
+        else:
+            greet_msg = (
+                f"Hello {name}! You have {len(active_meds)} active medicine(s) and {due_cnt} pending dose(s) today. "
+                "Ask me about today's schedule, remaining stock, refill dates, medicines by company name, or tell me when you take or skip a dose."
+            )
+        return _finalize(greet_msg)
+
+    if intent == "company_lookup":
+        company_term = extract_company_query(norm_text)
+        matched_meds = match_user_medicines(norm_text, active_meds)
+        if not company_term and matched_meds:
+            lines = []
+            for m in matched_meds:
+                mfg = m.catalogue_item.manufacturer if m.catalogue_item else None
+                lines.append(
+                    f"{m.display_name}: {mfg or 'Manufacturer not listed'}"
+                )
+            msg = "; ".join(lines) + "."
+            return _finalize(msg, med_id_context=matched_meds[0].id)
+
+        if not company_term:
+            # Check raw query tokens excluding common stop phrases as direct company fallback
+            fallback_tokens = [
+                tok
+                for tok in re.findall(r"[a-z0-9&-]{3,}", norm_text)
+                if tok
+                not in {
+                    "company",
+                    "manufacturer",
+                    "tablets",
+                    "tablet",
+                    "medicine",
+                    "medicines",
+                    "which",
+                    "show",
+                    "find",
+                    "only",
+                    "know",
+                    "name",
+                    "remember",
+                    "made",
+                    "makes",
+                    "products",
+                    "yava",
+                    "kaunsi",
+                    "dawai",
+                    "goli",
+                    "heli",
+                    "dikhao",
+                    "torisi",
+                }
+            ]
+            company_term = " ".join(fallback_tokens[:2]).strip() or None
+
+        if not company_term:
+            ask_cmp = {
+                "kn": "ದಯವಿಟ್ಟು ಯಾವ ಕಂಪನಿಯ ಔಷಧಿಗಳನ್ನು ಹುಡುಕಬೇಕು ಎಂದು ಹೆಸರು ತಿಳಿಸಿ (ಉದಾ: Cipla, Sun Pharma).",
+                "hi": "कृपया कंपनी का नाम बताएं जिसकी दवाई खोजनी है (जैसे Cipla, Sun Pharma)।",
+            }.get(
+                detected_lang,
+                "Please tell me the pharmaceutical company name to search (for example, Cipla or Micro Labs).",
+            )
+            return _finalize(
+                ask_cmp,
+                final_source="clarification",
+                next_awaiting_slot="company",
+                next_awaiting_intent="company_lookup",
+            )
+
+        hits = search_catalogue(
+            db, query="", manufacturer=company_term, limit=5, include_external=False
+        )
+        if not hits:
+            not_found_cmp = {
+                "kn": f"{company_term} ಕಂಪನಿಯ ಯಾವುದೇ ಪರಿಶೀಲಿತ ಔಷಧಿ ಸಿಗಲಿಲ್ಲ.",
+                "hi": f"{company_term} कंपनी की कोई सत्यापित दवाई नहीं मिली।",
+            }.get(detected_lang, f"No verified medicines were found for company '{company_term}'.")
+            return _finalize(not_found_cmp)
+
+        summary = "; ".join(
+            f"{h.brand_name} ({h.generic_name}, {h.strength}, {h.dosage_form}, {h.manufacturer})"
+            for h in hits
+        )
+        prefix = {
+            "kn": f"{company_term} ಕಂಪನಿಯ ಪರಿಶೀಲಿತ ಔಷಧಿಗಳು: ",
+            "hi": f"{company_term} कंपनी की सत्यापित दवाइयां: ",
+        }.get(detected_lang, f"Verified medicines from {company_term}: ")
+        return _finalize(prefix + summary + ".")
 
     if intent == "out_of_scope":
         return _finalize(_OOS_REPLY[detected_lang])
-
-    active_meds = list(
-        db.scalars(
-            select(PersonalMedicine)
-            .where(PersonalMedicine.user_id == user.id, PersonalMedicine.status == "active")
-            .order_by(PersonalMedicine.display_name.asc())
-        ).all()
-    )
 
     # --- READ-ONLY INTENTS ---
     if intent == "check_stock":
@@ -389,7 +560,12 @@ def handle_text_query(
                 "kn": "ದಯವಿಟ್ಟು ಯಾವ ಔಷಧಿಯ ಬಗ್ಗೆ ಮಾಹಿತಿ ಬೇಕು ಎಂಬುದನ್ನು ತಿಳಿಸಿ.",
                 "hi": "कृपया बताएं कि आपको किस दवाई की जानकारी चाहिए।",
             }.get(detected_lang, "Please specify which medicine you want information about.")
-            return _finalize(clarify_med, final_source="clarification")
+            return _finalize(
+                clarify_med,
+                final_source="clarification",
+                next_awaiting_slot="medicine",
+                next_awaiting_intent="medicine_info",
+            )
         if med.is_custom or med.catalogue_id is None:
             custom_msg = {
                 "kn": f"{med.display_name} ಕಸ್ಟಮ್ ಎಂಟ್ರಿಯಾಗಿರುವುದರಿಂದ ಪರಿಶೀಲಿತ ಶೈಕ್ಷಣಿಕ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ.",
@@ -462,7 +638,12 @@ def handle_text_query(
                 detected_lang,
                 f"Multiple pending doses found ({options}). Please mention which medicine or time you took.",
             )
-            return _finalize(multi_msg, final_source="clarification")
+            return _finalize(
+                multi_msg,
+                final_source="clarification",
+                next_awaiting_slot="medicine",
+                next_awaiting_intent="confirm_dose",
+            )
 
         target_dose = pending[0]
         spoken_qty, is_pack = extract_quantity_and_unit(norm_text)
@@ -499,7 +680,12 @@ def handle_text_query(
     if intent == "update_stock_purchase":
         med, err = _resolve_target_medicine(norm_text, active_meds, state)
         if med is None:
-            return _finalize(err or "Which medicine did you purchase?", final_source="clarification")
+            return _finalize(
+                err or "Which medicine did you purchase?",
+                final_source="clarification",
+                next_awaiting_slot="medicine",
+                next_awaiting_intent="update_stock_purchase",
+            )
 
         qty, is_pack = extract_quantity_and_unit(norm_text)
         if qty is None or qty <= 0:
@@ -507,6 +693,8 @@ def handle_text_query(
                 f"How many strips or {med.stock_unit}s of {med.display_name} did you purchase?",
                 final_source="clarification",
                 med_id_context=med.id,
+                next_awaiting_slot="quantity",
+                next_awaiting_intent="update_stock_purchase",
             )
 
         if is_pack:
@@ -515,6 +703,8 @@ def handle_text_query(
                     f"Pack size is not set for {med.display_name}. Please tell me the exact number of {med.stock_unit}s.",
                     final_source="clarification",
                     med_id_context=med.id,
+                    next_awaiting_slot="quantity",
+                    next_awaiting_intent="update_stock_purchase",
                 )
             packs = int(qty)
             loose = Decimal("0")
@@ -547,6 +737,84 @@ def handle_text_query(
             proposed_action=proposed,
             med_id_context=med.id,
         )
+
+    if intent == "skip_dose":
+        today_local = datetime.now(UTC).astimezone(tz).date()
+        daily = schedules_service.get_daily_schedule(db, user, target_date=today_local)
+        pending = [d for d in daily if d.status in {"pending", "snoozed"}]
+        med, _ = _resolve_target_medicine(norm_text, active_meds, state)
+        if med is not None:
+            pending = [d for d in pending if d.personal_med_id == med.id]
+        window = extract_time_window(norm_text)
+        if window and len(pending) > 1:
+            windowed = [d for d in pending if _time_bucket(d.scheduled_at.astimezone(tz).hour) == window]
+            if windowed:
+                pending = windowed
+        if not pending:
+            return _finalize(
+                {
+                    "kn": "ಇಂದು ಸ್ಕಿಪ್ ಮಾಡಲು ಯಾವುದೇ ಬಾಕಿ ಡೋಸ್ ಕಂಡುಬಂದಿಲ್ಲ.",
+                    "hi": "आज स्किप करने के लिए कोई लंबित डोज़ नहीं मिली।",
+                }.get(detected_lang, "No pending scheduled dose matched to skip today."),
+                final_source="clarification",
+            )
+        if len(pending) > 1:
+            options = ", ".join(
+                f"{d.display_name} ({d.scheduled_at.astimezone(tz).strftime('%H:%M')})" for d in pending[:4]
+            )
+            return _finalize(
+                f"Multiple pending doses found ({options}). Which medicine would you like to skip?",
+                final_source="clarification",
+                next_awaiting_slot="medicine",
+                next_awaiting_intent="skip_dose",
+            )
+        target_dose = pending[0]
+        token = uuid.uuid4()
+        time_label = _as_utc(target_dose.scheduled_at).astimezone(tz).strftime("%H:%M")
+        proposed = {
+            "action_type": "skip_dose",
+            "dose_event_id": str(target_dose.id),
+            "personal_med_id": str(target_dose.personal_med_id),
+            "medicine_name": target_dose.display_name,
+            "time": time_label,
+        }
+        state.pending_action = proposed
+        state.confirmation_token = token
+        return _finalize(
+            _LOCALIZED_PREFIXES["skip_dose_prompt"][detected_lang].format(
+                name=target_dose.display_name, time=time_label
+            ),
+            requires_confirmation=True,
+            token=token,
+            proposed_action=proposed,
+            med_id_context=target_dose.personal_med_id,
+        )
+
+    if intent == "snooze_dose":
+        today_local = datetime.now(UTC).astimezone(tz).date()
+        daily = schedules_service.get_daily_schedule(db, user, target_date=today_local)
+        pending = [d for d in daily if d.status in {"pending", "snoozed"}]
+        med, _ = _resolve_target_medicine(norm_text, active_meds, state)
+        if med is not None:
+            pending = [d for d in pending if d.personal_med_id == med.id]
+        if not pending:
+            return _finalize(
+                {
+                    "kn": "ಸ್ನೂಜ್ ಮಾಡಲು ಸದ್ಯಕ್ಕೆ ಯಾವುದೇ ಬಾಕಿ ಡೋಸ್ ಇಲ್ಲ.",
+                    "hi": "स्नूज़ करने के लिए अभी कोई लंबित डोज़ नहीं है।",
+                }.get(detected_lang, "No pending dose found to snooze right now."),
+                final_source="clarification",
+            )
+        target_dose = pending[0]
+        res = schedules_service.snooze_dose(db, user, target_dose.id, DoseSnoozeRequest(minutes=15))
+        snooze_local = _as_utc(res.dose.snoozed_until or res.dose.scheduled_at).astimezone(tz).strftime("%H:%M")
+        if detected_lang == "kn":
+            snz_msg = f"{target_dose.display_name} ರಿಮೈಂಡರ್ ಅನ್ನು {snooze_local} ವರೆಗೆ 15 ನಿಮಿಷ ಮುಂದೂಡಲಾಗಿದೆ."
+        elif detected_lang == "hi":
+            snz_msg = f"{target_dose.display_name} का रिमाइंडर 15 मिनट के लिए {snooze_local} तक स्नूज़ कर दिया गया है।"
+        else:
+            snz_msg = f"Snoozed your {target_dose.display_name} reminder by 15 minutes until {snooze_local}."
+        return _finalize(snz_msg, med_id_context=target_dose.personal_med_id)
 
     return _finalize(_OOS_REPLY[detected_lang])
 
@@ -653,6 +921,28 @@ def execute_confirmed_action(
             reply_text=stock_reply,
             language=lang,  # type: ignore[arg-type]
             intent="update_stock_purchase",
+            confidence=1.0,
+            classification_source="rule",
+            requires_confirmation=False,
+        )
+
+    if action_type == "skip_dose":
+        schedules_service.skip_dose(
+            db,
+            user,
+            uuid.UUID(pending["dose_event_id"]),
+            DoseSkipRequest(client_event_id=uuid.uuid4()),
+        )
+        if lang == "kn":
+            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) ಡೋಸ್ ಅನ್ನು ಸ್ಕಿಪ್ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ. ಸ್ಟಾಕ್ ಕಡಿತವಾಗಿಲ್ಲ."
+        elif lang == "hi":
+            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) की डोज़ को स्किप मार्क कर दिया गया है। स्टॉक में कोई कटौती नहीं हुई।"
+        else:
+            skip_reply = f"Marked {pending['medicine_name']} ({pending.get('time', '')}) as skipped with no stock deduction."
+        return AssistantResponse(
+            reply_text=skip_reply,
+            language=lang,  # type: ignore[arg-type]
+            intent="skip_dose",
             confidence=1.0,
             classification_source="rule",
             requires_confirmation=False,

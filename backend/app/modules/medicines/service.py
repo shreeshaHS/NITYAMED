@@ -1,9 +1,10 @@
 """Service layer for medicine catalogue search, education lookup, and personal medicines."""
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
@@ -11,9 +12,11 @@ from app.modules.auth.models import User
 from app.modules.inventory.models import StockTransaction
 from app.modules.medicines.external_api import ExternalMedicineRecord, fetch_external_medicines
 from app.modules.medicines.models import MedicineCatalogue, MedicineEducation, PersonalMedicine
+from app.modules.medicines.policy import check_medicine_policy
 from app.modules.medicines.schemas import (
     CUSTOM_EDUCATION_NOTICE,
     CatalogueItemResponse,
+    CatalogueVerificationRequest,
     MedicineEducationResponse,
     PersonalMedicineCreateRequest,
     PersonalMedicineDetailResponse,
@@ -26,6 +29,9 @@ def _cache_external_records(db: Session, records: list[ExternalMedicineRecord]) 
     """Persist newly fetched openFDA records into the local catalogue idempotently."""
     cached: list[MedicineCatalogue] = []
     for rec in records:
+        allowed, _ = check_medicine_policy(rec.brand_name, rec.generic_name, rec.active_ingredients)
+        if not allowed:
+            continue
         existing = db.scalar(
             select(MedicineCatalogue).where(
                 func.lower(MedicineCatalogue.brand_name) == rec.brand_name.lower(),
@@ -77,11 +83,15 @@ def search_catalogue(
     db: Session,
     query: str = "",
     dosage_form: str | None = None,
+    manufacturer: str | None = None,
     limit: int = 20,
     include_external: bool = True,
 ) -> list[CatalogueItemResponse]:
-    """Search local catalogue first and enrich from live openFDA/RxNorm APIs if needed."""
-    stmt = select(MedicineCatalogue).where(MedicineCatalogue.is_deprecated.is_(False))
+    """Search verified local catalogue by brand, salt, or company (manufacturer), then openFDA."""
+    stmt = select(MedicineCatalogue).where(
+        MedicineCatalogue.is_verified.is_(True),
+        MedicineCatalogue.is_deprecated.is_(False),
+    )
     cleaned_q = query.strip()
     if cleaned_q:
         pattern = f"%{cleaned_q}%"
@@ -90,20 +100,37 @@ def search_catalogue(
                 MedicineCatalogue.brand_name.ilike(pattern),
                 MedicineCatalogue.generic_name.ilike(pattern),
                 MedicineCatalogue.active_ingredients.ilike(pattern),
+                MedicineCatalogue.manufacturer.ilike(pattern),
             )
         )
     if dosage_form:
         stmt = stmt.where(MedicineCatalogue.dosage_form == dosage_form)
+    if manufacturer and manufacturer.strip():
+        stmt = stmt.where(MedicineCatalogue.manufacturer.ilike(f"%{manufacturer.strip()}%"))
 
-    local_rows = list(db.scalars(stmt.order_by(MedicineCatalogue.brand_name.asc()).limit(limit)).all())
+    pool_limit = min(max(limit * 4, 40), 120)
+    raw_rows = list(db.scalars(stmt.order_by(MedicineCatalogue.brand_name.asc()).limit(pool_limit)).all())
+    q_low = cleaned_q.lower()
+    if q_low:
+        raw_rows.sort(
+            key=lambda r: (
+                0 if r.brand_name.lower() == q_low else 1,
+                0 if r.brand_name.lower().startswith(q_low) else 1,
+                0 if r.generic_name.lower().startswith(q_low) else 1,
+                0 if (r.manufacturer or "").lower().startswith(q_low) else 1,
+                len(r.brand_name),
+                r.brand_name.lower(),
+            )
+        )
+    local_rows = raw_rows[:limit]
 
-    if include_external and len(cleaned_q) >= 2 and len(local_rows) < min(limit, 5):
+    if include_external and len(cleaned_q) >= 2 and len(local_rows) < min(limit, 5) and not manufacturer:
         ext_records = fetch_external_medicines(cleaned_q, limit=min(limit, 5))
         if ext_records:
             cached_rows = _cache_external_records(db, ext_records)
             seen_ids = {row.id for row in local_rows}
             for row in cached_rows:
-                if row.id in seen_ids or row.is_deprecated:
+                if row.id in seen_ids or row.is_deprecated or not row.is_verified:
                     continue
                 if dosage_form and row.dosage_form != dosage_form:
                     continue
@@ -153,11 +180,46 @@ def _ensure_catalogue_education(
     return edu
 
 
+def submit_catalogue_verification_request(
+    db: Session, payload: CatalogueVerificationRequest
+) -> CatalogueItemResponse:
+    """Submit a missing medicine as unverified (is_verified=False) after policy checks."""
+    allowed, reason = check_medicine_policy(payload.brand_name, payload.generic_name, payload.generic_name)
+    if not allowed:
+        raise AppError(403, "REGULATORY_POLICY_VIOLATION", reason or "Medicine violates safety policy")
+
+    existing = db.scalar(
+        select(MedicineCatalogue).where(
+            func.lower(MedicineCatalogue.brand_name) == payload.brand_name.strip().lower(),
+            func.lower(MedicineCatalogue.strength) == payload.strength.strip().lower(),
+            MedicineCatalogue.dosage_form == payload.dosage_form,
+        )
+    )
+    if existing is not None:
+        return CatalogueItemResponse.model_validate(existing)
+
+    item = MedicineCatalogue(
+        brand_name=payload.brand_name.strip(),
+        generic_name=(payload.generic_name or "Pending Composition Review").strip(),
+        active_ingredients=payload.generic_name.strip() if payload.generic_name else None,
+        strength=payload.strength.strip(),
+        dosage_form=payload.dosage_form,
+        standard_pack_size=payload.standard_pack_size,
+        manufacturer=payload.manufacturer.strip() if payload.manufacturer else None,
+        is_verified=False,
+        is_deprecated=False,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return CatalogueItemResponse.model_validate(item)
+
+
 def get_catalogue_education(db: Session, catalogue_id: UUID) -> MedicineEducationResponse:
     """Fetch verified patient education for a catalogue item, enriching via generic salt if needed."""
     catalogue_item = db.get(MedicineCatalogue, catalogue_id)
-    if catalogue_item is None or catalogue_item.is_deprecated:
-        raise AppError(404, "CATALOGUE_ITEM_NOT_FOUND", "Catalogue item not found")
+    if catalogue_item is None or catalogue_item.is_deprecated or not catalogue_item.is_verified:
+        raise AppError(404, "CATALOGUE_ITEM_NOT_FOUND", "Verified catalogue item not found")
 
     edu = _ensure_catalogue_education(db, catalogue_item)
     if edu is None:
@@ -168,12 +230,29 @@ def get_catalogue_education(db: Session, catalogue_id: UUID) -> MedicineEducatio
 def create_personal_medicine(
     db: Session, user: User, payload: PersonalMedicineCreateRequest
 ) -> PersonalMedicineResponse:
-    """Create a patient-owned medicine entry and optional INITIAL stock transaction."""
-    catalogue_item: MedicineCatalogue | None = None
-    if payload.catalogue_id is not None:
-        catalogue_item = db.get(MedicineCatalogue, payload.catalogue_id)
-        if catalogue_item is None or catalogue_item.is_deprecated:
-            raise AppError(404, "CATALOGUE_ITEM_NOT_FOUND", "Selected catalogue medicine was not found")
+    """Create a patient-owned medicine strictly from verified & authorized catalogue items."""
+    if payload.is_custom or payload.catalogue_id is None:
+        raise AppError(
+            403,
+            "UNAUTHORIZED_MEDICINE_NOT_ALLOWED",
+            "Only verified catalogue medicines are permitted under clinical safety guidelines. Submit a verification request for missing items.",
+        )
+
+    catalogue_item = db.get(MedicineCatalogue, payload.catalogue_id)
+    if catalogue_item is None or catalogue_item.is_deprecated:
+        raise AppError(404, "CATALOGUE_ITEM_NOT_FOUND", "Selected catalogue medicine was not found")
+    if not catalogue_item.is_verified:
+        raise AppError(
+            403,
+            "UNVERIFIED_MEDICINE_NOT_ALLOWED",
+            "This medicine is awaiting administrator verification and cannot be scheduled yet.",
+        )
+
+    allowed, reason = check_medicine_policy(
+        catalogue_item.brand_name, catalogue_item.generic_name, catalogue_item.active_ingredients
+    )
+    if not allowed:
+        raise AppError(403, "REGULATORY_POLICY_VIOLATION", reason or "Medicine violates safety policy")
 
     display_name = (
         payload.display_name.strip()
@@ -314,8 +393,9 @@ def get_personal_medicine_detail(
 def update_personal_medicine(
     db: Session, user: User, med_id: UUID, payload: PersonalMedicineUpdateRequest
 ) -> PersonalMedicineResponse:
-    """Update allowed personal medicine settings without altering stock ledger."""
+    """Update allowed personal medicine settings and sync future unconfirmed doses with status."""
     med = get_owned_medicine(db, user, med_id)
+    old_status = med.status
     updates = payload.model_dump(exclude_unset=True)
     for field in ("display_name", "dose_unit", "instructions"):
         if field in updates and updates[field] is not None:
@@ -323,6 +403,20 @@ def update_personal_medicine(
 
     for field, value in updates.items():
         setattr(med, field, value)
+
+    if med.status in {"paused", "completed", "archived"} and old_status != med.status:
+        from app.modules.schedules.models import DoseEvent
+
+        db.execute(
+            delete(DoseEvent).where(
+                DoseEvent.personal_med_id == med.id,
+                DoseEvent.status.in_(("pending", "snoozed")),
+            )
+        )
+    elif med.status == "active" and old_status != "active":
+        from app.modules.schedules.service import ensure_rolling_horizon_for_medicine
+
+        ensure_rolling_horizon_for_medicine(db, med)
 
     db.commit()
     db.refresh(med)

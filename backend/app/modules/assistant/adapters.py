@@ -19,7 +19,11 @@ ALLOWED_ASSISTANT_INTENTS: tuple[str, ...] = (
     "adherence_status",
     "refill_check",
     "confirm_dose",
+    "skip_dose",
+    "snooze_dose",
     "update_stock_purchase",
+    "company_lookup",
+    "greeting_help",
     "out_of_scope",
 )
 
@@ -216,3 +220,89 @@ class BoundedLLMAdapter:
     def simplify_or_translate(self, verified_text: str, target_language: str) -> str:
         """Return verified_text unchanged to guarantee deterministic clinical & data fidelity."""
         return verified_text
+
+    def generate_conversational_reply(
+        self,
+        *,
+        user_text: str,
+        target_language: str,
+        grounded_facts: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> str | None:
+        """Generate a warm, Gemini/Google-Assistant-style reply strictly grounded in verified DB facts."""
+        settings = get_settings()
+        if not settings.gemini_api_key and not settings.hf_token:
+            return None
+
+        lang_label = {"kn": "Kannada (ಕನ್ನಡ)", "hi": "Hindi (हिन्दी)"}.get(target_language, "English")
+        recent_turns = "\n".join(
+            f"User: {h.get('user', '')}\nAssistant: {h.get('assistant', '')}"
+            for h in (history or [])[-4:]
+        )
+        system_prompt = (
+            f"You are NityaMed Voice Companion — warm, friendly, conversational like Google Assistant or Gemini, "
+            f"speaking in {lang_label}.\n"
+            "STRICT RULES:\n"
+            "1. Use ONLY the Verified Facts below (exact medicine names, numbers, dates, and stock counts).\n"
+            "2. NEVER diagnose, prescribe, suggest starting/stopping/changing dosages, or mention unverified facts.\n"
+            "3. Reply naturally and empathetically in 1 to 3 concise sentences suitable for spoken voice.\n"
+            "4. Keep all numeric stock counts, dates, times, and source citations exact when present in Verified Facts."
+        )
+        user_prompt = (
+            f"Recent Conversation:\n{recent_turns or 'None'}\n\n"
+            f"Verified Facts From NityaMed Database:\n{grounded_facts}\n\n"
+            f"User Query: {user_text}"
+        )
+
+        if settings.gemini_api_key:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{settings.gemini_model}:generateContent?key={settings.gemini_api_key}"
+            )
+            try:
+                resp = httpx.post(
+                    url,
+                    json={
+                        "system_instruction": {"parts": [{"text": system_prompt}]},
+                        "contents": [{"parts": [{"text": user_prompt}]}],
+                        "generationConfig": {"temperature": 0.35, "maxOutputTokens": 220},
+                    },
+                    timeout=8.0,
+                )
+                resp.raise_for_status()
+                candidates = resp.json().get("candidates") or []
+                reply = (
+                    candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    if candidates
+                    else ""
+                ).strip()
+                if reply:
+                    return reply
+            except Exception as exc:
+                logger.warning("Gemini conversational reply skipped: %s", exc)
+
+        if settings.hf_token:
+            try:
+                resp = httpx.post(
+                    "https://router.huggingface.co/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.hf_token}"},
+                    json={
+                        "model": settings.hf_llm_model,
+                        "temperature": 0.35,
+                        "max_tokens": 220,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                    },
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+                choices = resp.json().get("choices") or []
+                reply = (choices[0].get("message", {}).get("content", "") if choices else "").strip()
+                if reply:
+                    return reply
+            except Exception as exc:
+                logger.warning("HF Router conversational reply skipped: %s", exc)
+
+        return None

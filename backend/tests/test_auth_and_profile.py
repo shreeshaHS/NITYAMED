@@ -381,3 +381,59 @@ def test_email_webhook_delivery_and_safe_failure(monkeypatch: pytest.MonkeyPatch
     assert sent_err is False
     assert "simulated network failure" in detail_err
     get_settings.cache_clear()
+
+
+def test_otp_lockout_and_auth_rate_limit(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import get_settings
+    from app.core.rate_limit import reset_rate_limiter
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "require_email_verification", True)
+
+    reg = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "lockout@example.com",
+            "password": "StrongPassword123",
+            "display_name": "Lockout Test",
+            "preferred_lang": "en",
+        },
+    )
+    assert reg.status_code == 201
+    otp = reg.json()["dev_otp_preview"]
+    wrong = "000000" if otp != "000000" else "111111"
+
+    # 4 wrong guesses return 400; 5th locks out and invalidates the pending OTP with 429
+    for _ in range(4):
+        assert (
+            client.post(
+                "/api/v1/auth/verify-email",
+                json={"email": "lockout@example.com", "otp_code": wrong},
+            ).status_code
+            == 400
+        )
+    fifth = client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": "lockout@example.com", "otp_code": wrong},
+    )
+    assert fifth.status_code == 429
+    assert fifth.json()["error"]["code"] == "OTP_ATTEMPTS_EXCEEDED"
+
+    # Verify sliding-window rate limiter on /auth/login
+    reset_rate_limiter()
+    monkeypatch.setattr(settings, "auth_rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "auth_rate_limit_max_requests", 3)
+    for _ in range(3):
+        r = client.post(
+            "/api/v1/auth/login",
+            json={"email": "nobody@example.com", "password": "StrongPassword123"},
+        )
+        assert r.status_code == 401
+    throttled = client.post(
+        "/api/v1/auth/login",
+        json={"email": "nobody@example.com", "password": "StrongPassword123"},
+    )
+    assert throttled.status_code == 429
+    assert throttled.json()["error"]["code"] == "RATE_LIMIT_EXCEEDED"
+    assert throttled.headers.get("X-Content-Type-Options") == "nosniff"
+    reset_rate_limiter()

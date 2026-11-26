@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.models import AuditLog
 from app.modules.inventory.models import StockTransaction
+from app.modules.medicines.models import MedicineCatalogue
 from app.modules.schedules.models import DoseEvent
 
 
@@ -28,19 +29,31 @@ def _auth_header(client: TestClient, email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-def _create_custom_med(
+def _create_verified_med(
     client: TestClient,
+    db_session: Session,
     headers: dict[str, str],
     name: str,
     initial_loose: str = "10.00",
     units_per_pack: str | None = "10.00",
     low_threshold: str | None = None,
 ) -> dict:
+    cat = MedicineCatalogue(
+        brand_name=name,
+        generic_name=f"{name} Generic",
+        strength="500 mg",
+        dosage_form="tablet",
+        standard_pack_size=Decimal(units_per_pack) if units_per_pack else None,
+        pack_unit="tablet",
+        manufacturer="NityaLab",
+        is_verified=True,
+        is_deprecated=False,
+    )
+    db_session.add(cat)
+    db_session.commit()
+
     payload: dict = {
-        "is_custom": True,
-        "display_name": name,
-        "strength": "500 mg",
-        "dosage_form": "tablet",
+        "catalogue_id": str(cat.id),
         "dose_per_intake": "1.00",
         "dose_unit": "tablet",
         "stock_unit": "tablet",
@@ -56,10 +69,10 @@ def _create_custom_med(
 
 
 def test_schedule_versioning_preserves_history_and_generates_varying_doses(
-    client: TestClient,
+    client: TestClient, db_session: Session
 ) -> None:
     headers = _auth_header(client, "sched@example.com")
-    med = _create_custom_med(client, headers, "Metformin 500", initial_loose="20.00")
+    med = _create_verified_med(client, db_session, headers, "Metformin 500", initial_loose="20.00")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
     v1 = client.post(
@@ -119,7 +132,7 @@ def test_adherence_states_idempotency_and_audited_correction(
     client: TestClient, db_session: Session
 ) -> None:
     headers = _auth_header(client, "adherence@example.com")
-    med = _create_custom_med(client, headers, "Amlong 5", initial_loose="10.00")
+    med = _create_verified_med(client, db_session, headers, "Amlong 5", initial_loose="10.00")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
     client.post(
@@ -212,7 +225,7 @@ def test_overdue_doses_become_expired_unconfirmed_and_zero_stock_confirm_allowed
     client: TestClient, db_session: Session
 ) -> None:
     headers = _auth_header(client, "expiry@example.com")
-    med = _create_custom_med(client, headers, "Telma 40", initial_loose="0.00")
+    med = _create_verified_med(client, db_session, headers, "Telma 40", initial_loose="0.00")
     yesterday = (datetime.now(UTC) - timedelta(days=1)).date()
 
     client.post(
@@ -253,13 +266,13 @@ def test_overdue_doses_become_expired_unconfirmed_and_zero_stock_confirm_allowed
 
 
 def test_inventory_operations_and_deterministic_refill_predictions(
-    client: TestClient,
+    client: TestClient, db_session: Session
 ) -> None:
     headers = _auth_header(client, "inventory@example.com")
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
     # 1. Active alternate-day medicine with 6 tablets (3 active doses over 5 days)
-    alt_med = _create_custom_med(client, headers, "Warfarin 2", initial_loose="4.00")
+    alt_med = _create_verified_med(client, db_session, headers, "Warfarin 2", initial_loose="4.00")
     client.post(
         f"/api/v1/medicines/{alt_med['id']}/schedules",
         headers=headers,
@@ -305,7 +318,7 @@ def test_inventory_operations_and_deterministic_refill_predictions(
     assert Decimal(summary[0]["projected_stock_balance"]) <= Decimal("10.00")
 
     # 2. Fixed course (5 days, 1/day, stock 10) -> should NOT alert for refill
-    fixed_med = _create_custom_med(client, headers, "Azithral 500", initial_loose="10.00")
+    fixed_med = _create_verified_med(client, db_session, headers, "Azithral 500", initial_loose="10.00")
     client.post(
         f"/api/v1/medicines/{fixed_med['id']}/schedules",
         headers=headers,
@@ -319,8 +332,8 @@ def test_inventory_operations_and_deterministic_refill_predictions(
     )
 
     # 3. PRN medicine -> never assumes daily burn; triggers only on low_stock_threshold
-    prn_med = _create_custom_med(
-        client, headers, "Asthalin PRN", initial_loose="3.00", units_per_pack=None, low_threshold="5.00"
+    prn_med = _create_verified_med(
+        client, db_session, headers, "Asthalin PRN", initial_loose="3.00", units_per_pack=None, low_threshold="5.00"
     )
     client.post(
         f"/api/v1/medicines/{prn_med['id']}/schedules",
@@ -335,3 +348,44 @@ def test_inventory_operations_and_deterministic_refill_predictions(
     assert preds["Asthalin PRN"]["should_alert_now"] is True
     assert preds["Warfarin 2"]["prediction_mode"] == "scheduled_deterministic"
     assert preds["Warfarin 2"]["projected_depletion_date"] is not None
+
+
+def test_rolling_horizon_extends_beyond_day_14_and_pause_clears_pending_doses(
+    client: TestClient, db_session: Session
+) -> None:
+    headers = _auth_header(client, "horizon@example.com")
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    med = _create_verified_med(client, db_session, headers, "Ecosprin 75", initial_loose="30.00")
+
+    sched = client.post(
+        f"/api/v1/medicines/{med['id']}/schedules",
+        headers=headers,
+        json={
+            "frequency_type": "once_daily",
+            "times": [{"time": "09:00", "dose": "1.00"}],
+            "start_date": today.isoformat(),
+            "horizon_days": 3,
+        },
+    )
+    assert sched.status_code == 201
+
+    # Requesting Day 25 automatically materializes the continuous rolling horizon
+    day_25 = (today + timedelta(days=25)).isoformat()
+    daily_25 = client.get(f"/api/v1/doses/daily?date={day_25}", headers=headers)
+    assert daily_25.status_code == 200
+    assert len(daily_25.json()) == 1
+    assert daily_25.json()[0]["display_name"] == "Ecosprin 75"
+
+    # Pausing medicine removes future pending doses immediately
+    paused = client.patch(
+        f"/api/v1/medicines/{med['id']}", headers=headers, json={"status": "paused"}
+    )
+    assert paused.status_code == 200
+    assert client.get(f"/api/v1/doses/daily?date={day_25}", headers=headers).json() == []
+
+    # Resuming restores future doses cleanly
+    resumed = client.patch(
+        f"/api/v1/medicines/{med['id']}", headers=headers, json={"status": "active"}
+    )
+    assert resumed.status_code == 200
+    assert len(client.get(f"/api/v1/doses/daily?date={day_25}", headers=headers).json()) == 1

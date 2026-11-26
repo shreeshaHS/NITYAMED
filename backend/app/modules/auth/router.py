@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limit import enforce_auth_rate_limit
 from app.modules.auth import service
 from app.modules.auth.dependencies import get_current_user, require_role
 from app.modules.auth.models import User
@@ -26,13 +27,20 @@ auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 profile_router = APIRouter(prefix="/profile", tags=["Patient Profile"])
 
 
-@auth_router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@auth_router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Register a new patient account."""
     return service.register_patient(db, payload)
 
 
-@auth_router.post("/login", response_model=TokenResponse)
+@auth_router.post(
+    "/login", response_model=TokenResponse, dependencies=[Depends(enforce_auth_rate_limit)]
+)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Authenticate with email and password."""
     return service.login_user(db, payload)
@@ -44,13 +52,19 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenResp
     return service.rotate_refresh_token(db, payload.refresh_token)
 
 
-@auth_router.post("/verify-email", response_model=TokenResponse)
+@auth_router.post(
+    "/verify-email",
+    response_model=TokenResponse,
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
 def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenResponse:
     """Verify email ownership using a 6-digit OTP and issue tokens."""
     return service.verify_email_otp(db, payload.email, payload.otp_code)
 
 
-@auth_router.post("/resend-verification")
+@auth_router.post(
+    "/resend-verification", dependencies=[Depends(enforce_auth_rate_limit)]
+)
 def resend_verification(
     payload: ResendVerificationRequest, db: Session = Depends(get_db)
 ) -> dict:
@@ -58,7 +72,9 @@ def resend_verification(
     return service.resend_verification_otp(db, payload.email)
 
 
-@auth_router.post("/forgot-password")
+@auth_router.post(
+    "/forgot-password", dependencies=[Depends(enforce_auth_rate_limit)]
+)
 def forgot_password(
     payload: ForgotPasswordRequest, db: Session = Depends(get_db)
 ) -> dict:
@@ -66,7 +82,11 @@ def forgot_password(
     return service.request_password_reset(db, payload.email)
 
 
-@auth_router.post("/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+@auth_router.post(
+    "/reset-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
 def reset_password(
     payload: ResetPasswordRequest, db: Session = Depends(get_db)
 ) -> None:

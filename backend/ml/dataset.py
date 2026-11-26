@@ -1284,6 +1284,411 @@ def build_multilingual_dataset() -> list[UtteranceSample]:
             "train ticket book kar do delhi ke liye",
             "aaj petrol ka rate kya hai batao",
         ]),
+
+        # ================= VOICE SHORT-COMMAND & INDIC PARAPHRASE EXPANSION =================
+        ("stk_v_en_1", "check_stock", "en", [
+            "stock check",
+            "check inventory",
+            "remaining pills",
+        ]),
+        ("stk_v_kn_1", "check_stock", "kn", [
+            "ನನ್ನಲ್ಲಿ ಬಾಕಿ ಎಷ್ಟಿದೆ ನೋಡಿ",
+            "ಸ್ಟಾಕ್ ಬ್ಯಾಲೆನ್ಸ್ ಚೆಕ್ ಮಾಡಿ",
+            "ಔಷಧಿ ಸ್ಟಾಕ್ ತೋರಿಸಿ",
+        ]),
+        ("stk_v_hi_1", "check_stock", "hi", [
+            "बचा हुआ स्टॉक चेक करो",
+            "कितनी दवा बाकी बची है",
+            "स्टॉक बैलेंस दिखाओ",
+        ]),
+        ("tod_v_en_1", "today_schedule", "en", [
+            "today schedule",
+            "todays pills",
+            "show today doses",
+        ]),
+        ("tod_v_kn_1", "today_schedule", "kn", [
+            "ಇಂದಿನ ಮಾತ್ರೆಗಳ ಪಟ್ಟಿ ಹೇಳಿ",
+            "ಇವತ್ತು ಯಾವ ಯಾವ ಮಾತ್ರೆ ಇದೆ",
+            "ಇಂದಿನ ಶೆಡ್ಯೂಲ್ ಓದಿ",
+        ]),
+        ("tod_v_hi_1", "today_schedule", "hi", [
+            "आज की दवाई की लिस्ट बताओ",
+            "आज क्या क्या खाना है दवा में",
+            "आज का शेड्यूल सुनाओ",
+        ]),
+        ("nxt_v_en_1", "next_dose", "en", [
+            "next dose",
+            "next medicine time",
+            "when is next pill",
+        ]),
+        ("nxt_v_kn_1", "next_dose", "kn", [
+            "ಮುಂದಿನ ಡೋಸ್ ಯಾವಾಗ",
+            "ಮುಂದಿನ ಮಾತ್ರೆ ಟೈಮ್ ತಿಳಿಸಿ",
+            "ಇನ್ನು ಯಾವಾಗ ಔಷಧಿ ತೆಗೆದುಕೊಳ್ಳಬೇಕು",
+        ]),
+        ("nxt_v_hi_1", "next_dose", "hi", [
+            "अगली डोज़ कब लेनी है",
+            "नेक्स्ट दवाई कितने बजे है",
+            "अगली गोली का टाइम बताओ",
+        ]),
+        ("inf_v_en_1", "medicine_info", "en", [
+            "medicine information",
+            "side effects of this pill",
+            "what is dolo used for",
+        ]),
+        ("inf_v_kn_1", "medicine_info", "kn", [
+            "ಈ ಔಷಧಿಯ ವಿವರ ಹೇಳಿ",
+            "ಮಾತ್ರೆಯ ಅಡ್ಡಪರಿಣಾಮ ಏನು",
+            "ಡೋಲೋ ಯಾವುದಕ್ಕೆ ಬಳಸುತ್ತಾರೆ",
+        ]),
+        ("inf_v_hi_1", "medicine_info", "hi", [
+            "इस दवा के बारे में जानकारी चाहिए",
+            "दवाई के साइड इफेक्ट बताओ",
+            "यह गोली किस बीमारी में काम आती है",
+        ]),
+        ("adh_v_en_1", "adherence_status", "en", [
+            "did i take today dose",
+            "today adherence status",
+            "check if morning tablet taken",
+        ]),
+        ("adh_v_kn_1", "adherence_status", "kn", [
+            "ಇಂದು ನಾನು ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡೆನಾ",
+            "ಇಂದಿನ ಡೋಸ್ ತಗೊಂಡಿದೀನಾ ನೋಡಿ",
+            "ನನ್ನ ಇಂದಿನ ಅನುಸರಣಾ ಸ್ಥಿತಿ ತೋರಿಸಿ",
+        ]),
+        ("adh_v_hi_1", "adherence_status", "hi", [
+            "क्या मैंने आज दवाई खा ली है",
+            "सुबह की खुराक ली गई या नहीं",
+            "मेरा आज का डोज़ स्टेटस दिखाओ",
+        ]),
+        ("ref_v_en_1", "refill_check", "en", [
+            "refill check",
+            "when do i need to refill",
+            "how many days supply left",
+        ]),
+        ("ref_v_kn_1", "refill_check", "kn", [
+            "ರಿಫಿಲ್ ಯಾವಾಗ ಮಾಡಬೇಕು",
+            "ಮಾತ್ರೆಗಳು ಯಾವಾಗ ಮುಗಿಯುತ್ತವೆ",
+            "ಇನ್ನು ಎಷ್ಟು ದಿನ ಸ್ಟಾಕ್ ಬರುತ್ತದೆ",
+        ]),
+        ("ref_v_hi_1", "refill_check", "hi", [
+            "दवाई कब रीफिल करानी पड़ेगी",
+            "मेरा स्टॉक कब खत्म हो जाएगा",
+            "दवा कितने दिन और चल जाएगी",
+        ]),
+        ("cnf_v_en_1", "confirm_dose", "en", [
+            "confirm morning dose",
+            "mark dolo taken",
+            "i took my pill now",
+        ]),
+        ("cnf_v_kn_1", "confirm_dose", "kn", [
+            "ಈಗ ಮಾತ್ರೆ ತೆಗೆದುಕೊಂಡೆ ಕನ್ಫರ್ಮ್ ಮಾಡಿ",
+            "ಬೆಳಗಿನ ಮಾತ್ರೆ ತಗೊಂಡೆ ಗುರುತಿಸಿ",
+            "ಡೋಸ್ ತೆಗೆದುಕೊಂಡಿದ್ದೇನೆ ಸೇವ್ ಮಾಡಿ",
+        ]),
+        ("cnf_v_hi_1", "confirm_dose", "hi", [
+            "मैंने दवाई खा ली कन्फर्म कर दो",
+            "सुबह की गोली ले ली मार्क करो",
+            "मेरी डोज़ ली गई है सेव कर दो",
+        ]),
+        ("pur_v_en_1", "update_stock_purchase", "en", [
+            "add one strip",
+            "bought two packs update stock",
+            "purchased ten tablets",
+        ]),
+        ("pur_v_kn_1", "update_stock_purchase", "kn", [
+            "ಹೊಸ ಸ್ಟ್ರಿಪ್ ತಂದಿದ್ದೇನೆ ಸ್ಟಾಕ್ ಸೇರಿಸಿ",
+            "ಎರಡು ಪ್ಯಾಕ್ ಖರೀದಿಸಿದ್ದೇನೆ ಅಪ್ಡೇಟ್ ಮಾಡಿ",
+            "ಹತ್ತು ಮಾತ್ರೆಗಳನ್ನು ಸ್ಟಾಕ್‌ಗೆ ಹಾಕಿ",
+        ]),
+        ("pur_v_hi_1", "update_stock_purchase", "hi", [
+            "नया पत्ता खरीदा है स्टॉक जोड़ दो",
+            "दो स्ट्रिप लाया हूं इन्वेंटरी बढ़ाओ",
+            "दस गोलियां स्टॉक में ऐड करो",
+        ]),
+        ("oos_v_en_1", "out_of_scope", "en", [
+            "tell me a story",
+            "call mom on phone",
+            "open settings app",
+        ]),
+        ("oos_v_kn_1", "out_of_scope", "kn", [
+            "ಇಂದಿನ ರಾಶಿ ಭವಿಷ್ಯ ಹೇಳಿ",
+            "ಕನ್ನಡ ಹಾಡು ಹಾಕಿ",
+            "ಬೆಂಗಳೂರಿನಲ್ಲಿ ಎಷ್ಟು ಗಂಟೆ ಆಯಿತು",
+        ]),
+        ("oos_v_hi_1", "out_of_scope", "hi", [
+            "आज का राशिफल बताओ",
+            "बॉलीवुड गाना बजाओ",
+            "दिल्ली में अभी कितने बजे हैं",
+        ]),
+        ("oos_v_knr_1", "out_of_scope", "kn_rom", [
+            "karnataka weather report heli",
+            "bengaluru cricket score yenu",
+        ]),
+        ("oos_v_hir_1", "out_of_scope", "hi_rom", [
+            "mumbai ka mausam kaisa hai",
+            "cricket match ka score batao",
+        ]),
+
+        # ================= 10. company_lookup =================
+        ("cmp_en_1", "company_lookup", "en", [
+            "which company makes dolo 650",
+            "who manufactures metformin tablets",
+        ]),
+        ("cmp_en_2", "company_lookup", "en", [
+            "i only know the company name cipla show medicines",
+            "find tablets made by micro labs",
+        ]),
+        ("cmp_en_3", "company_lookup", "en", [
+            "i forgot the tablet name show sun pharma products",
+            "search medicines manufactured by glenmark",
+        ]),
+        ("cmp_en_4", "company_lookup", "en", [
+            "list verified drugs from dr reddys laboratory",
+            "show me tablets by abbott pharma",
+        ]),
+        ("cmp_en_5", "company_lookup", "en", [
+            "what manufacturer produces this medicine",
+            "which pharma brand sells these capsules",
+        ]),
+        ("cmp_kn_1", "company_lookup", "kn", [
+            "ಈ ಮಾತ್ರೆಯನ್ನು ಯಾವ ಕಂಪನಿ ತಯಾರಿಸುತ್ತದೆ",
+            "ಸಿಪ್ಲಾ ಕಂಪನಿಯ ಔಷಧಿಗಳನ್ನು ತೋರಿಸಿ",
+        ]),
+        ("cmp_kn_2", "company_lookup", "kn", [
+            "ಮೈಕ್ರೋ ಲ್ಯಾಬ್ಸ್ ಕಂಪನಿಯ ಮಾತ್ರೆಗಳು ಯಾವುವು",
+            "ನನಗೆ ಕಂಪನಿ ಹೆಸರು ಮಾತ್ರ ಗೊತ್ತು ಔಷಧಿ ಹುಡುಕಿ",
+        ]),
+        ("cmp_kn_3", "company_lookup", "kn", [
+            "ಸನ್ ಫಾರ್ಮಾ ಕಂಪನಿಯ ಟ್ಯಾಬ್ಲೆಟ್ ಪಟ್ಟಿ ತೋರಿಸಿ",
+            "ಗ್ಲೆನ್ಮಾರ್ಕ್ ಕಂಪನಿ ತಯಾರಿಸುವ ಮಾತ್ರೆ ಹುಡುಕಿ",
+        ]),
+        ("cmp_knr_1", "company_lookup", "kn_rom", [
+            "ee tablet yava company madutte",
+            "cipla company medicines torisi",
+        ]),
+        ("cmp_knr_2", "company_lookup", "kn_rom", [
+            "micro labs company tablets yavdu ide",
+            "company hesaru matra gottu tablet name heli",
+        ]),
+        ("cmp_knr_3", "company_lookup", "kn_rom", [
+            "sun pharma manufacturer medicines search maadi",
+            "dr reddys company capsules yavdu",
+        ]),
+        ("cmp_hi_1", "company_lookup", "hi", [
+            "यह दवाई किस कंपनी की है",
+            "सिप्ला कंपनी की दवाइयां दिखाओ",
+        ]),
+        ("cmp_hi_2", "company_lookup", "hi", [
+            "मुझे दवाई का नाम नहीं पता सिर्फ कंपनी याद है",
+            "सन फार्मा कंपनी की गोलियां खोजो",
+        ]),
+        ("cmp_hi_3", "company_lookup", "hi", [
+            "एबॉट कंपनी की टैबलेट लिस्ट दिखाओ",
+            "इस दवा का निर्माता कौन सी कंपनी है",
+        ]),
+        ("cmp_hir_1", "company_lookup", "hi_rom", [
+            "ye tablet kaunsi company banati hai",
+            "cipla company ki dawai dikhao",
+        ]),
+        ("cmp_hir_2", "company_lookup", "hi_rom", [
+            "sirf company ka naam pata hai sun pharma ki dawai batao",
+            "micro labs manufacturer ki tablets search karo",
+        ]),
+        ("cmp_cs_1", "company_lookup", "code_switch", [
+            "dolo 650 ka manufacturer company kya hai heli",
+            "sun pharma company tablets search maadi",
+        ]),
+        ("cmp_cs_2", "company_lookup", "code_switch", [
+            "cipla manufacturer medicines list madu",
+            "company name matra gottu tablet search karo",
+        ]),
+
+        # ================= 11. skip_dose =================
+        ("skp_en_1", "skip_dose", "en", [
+            "skip my afternoon tablet",
+            "mark my morning dose as skipped",
+        ]),
+        ("skp_en_2", "skip_dose", "en", [
+            "i want to skip dolo today evening",
+            "please skip my current scheduled pill",
+        ]),
+        ("skp_en_3", "skip_dose", "en", [
+            "skipping this dose because i forgot earlier",
+            "set todays night capsule as skipped",
+        ]),
+        ("skp_en_4", "skip_dose", "en", [
+            "mark current reminder skipped",
+            "do not count this evening tablet skip it",
+        ]),
+        ("skp_kn_1", "skip_dose", "kn", [
+            "ಇಂದಿನ ಮಧ್ಯಾಹ್ನದ ಮಾತ್ರೆ ಸ್ಕಿಪ್ ಮಾಡಿ",
+            "ಬೆಳಗಿನ ಡೋಸ್ ಸ್ಕಿಪ್ ಎಂದು ಗುರುತಿಸಿ",
+        ]),
+        ("skp_kn_2", "skip_dose", "kn", [
+            "ಸಂಜೆಯ ಟ್ಯಾಬ್ಲೆಟ್ ತೆಗೆದುಕೊಳ್ಳುತ್ತಿಲ್ಲ ಸ್ಕಿಪ್ ಮಾಡಿ",
+            "ಇವತ್ತಿನ ಡೋಸ್ ಸ್ಕಿಪ್ ಮಾಡಿ ಸೇವ್ ಮಾಡಿ",
+        ]),
+        ("skp_kn_3", "skip_dose", "kn", [
+            "ಈಗಿನ ಮಾತ್ರೆ ಸ್ಕಿಪ್ ಎಂದು ನಮೂದಿಸಿ",
+            "ರಾತ್ರಿಯ ಗುಳಿಗೆ ಬಿಟ್ಟುಬಿಡಿ ಸ್ಕಿಪ್ ಮಾಡಿ",
+        ]),
+        ("skp_knr_1", "skip_dose", "kn_rom", [
+            "ivattina afternoon tablet skip maadi",
+            "morning dose skip antha mark maadi",
+        ]),
+        ("skp_knr_2", "skip_dose", "kn_rom", [
+            "evening gulige skip madbeku save maadi",
+            "current dose skip madidini mark maadi",
+        ]),
+        ("skp_hi_1", "skip_dose", "hi", [
+            "आज दोपहर की गोली स्किप कर दो",
+            "मेरी शाम की दवाई को छोड़ा गया मार्क करो",
+        ]),
+        ("skp_hi_2", "skip_dose", "hi", [
+            "मैं अभी वाली डोज़ स्किप करना चाहता हूं",
+            "सुबह की टैबलेट स्किप कर दीजिए",
+        ]),
+        ("skp_hi_3", "skip_dose", "hi", [
+            "रात की खुराक स्किप के रूप में सेव करो",
+            "आज की डोज छोड़नी है स्किप मार्क करो",
+        ]),
+        ("skp_hir_1", "skip_dose", "hi_rom", [
+            "aaj sham ki goli skip kar do",
+            "meri current dose skip mark karo",
+        ]),
+        ("skp_hir_2", "skip_dose", "hi_rom", [
+            "morning tablet nahi li skip set karo",
+            "is dose ko skipped mark kar do",
+        ]),
+        ("skp_cs_1", "skip_dose", "code_switch", [
+            "evening dolo dose skip maadi please",
+            "aaj ki afternoon pill skip kar do",
+        ]),
+        ("skp_cs_2", "skip_dose", "code_switch", [
+            "current medicine dose skip mark maadu",
+            "night pill skip karne ka hai please",
+        ]),
+
+        # ================= 12. snooze_dose =================
+        ("snz_en_1", "snooze_dose", "en", [
+            "snooze my dose reminder for 15 minutes",
+            "remind me again in 15 minutes",
+        ]),
+        ("snz_en_2", "snooze_dose", "en", [
+            "snooze this medicine alarm for now",
+            "delay my tablet reminder by 15 mins",
+        ]),
+        ("snz_en_3", "snooze_dose", "en", [
+            "push my pill notification back 15 minutes",
+            "postpone current dose alarm briefly",
+        ]),
+        ("snz_en_4", "snooze_dose", "en", [
+            "ring the dose reminder again later",
+            "snooze evening tablet alert",
+        ]),
+        ("snz_kn_1", "snooze_dose", "kn", [
+            "ನನ್ನ ಡೋಸ್ ರಿಮೈಂಡರ್ ಅನ್ನು 15 ನಿಮಿಷ ಮುಂದೂಡಿ",
+            "ಸ್ನೂಜ್ ಮಾಡಿ 15 ನಿಮಿಷದ ನಂತರ ನೆನಪಿಸಿ",
+        ]),
+        ("snz_kn_2", "snooze_dose", "kn", [
+            "ಮಾತ್ರೆ ಅಲಾರಾಂ ಸ್ವಲ್ಪ ಹೊತ್ತು ಮುಂದೂಡಿ",
+            "15 ನಿಮಿಷ ಬಿಟ್ಟು ಮತ್ತೆ ನೆನಪಿಸಿ",
+        ]),
+        ("snz_kn_3", "snooze_dose", "kn", [
+            "ಈಗಿನ ಔಷಧಿ ಅಲಾರಾಂ ಸ್ನೂಜ್ ಮಾಡಿ",
+            "ಸ್ವಲ್ಪ ಸಮಯದ ನಂತರ ಮತ್ತೆ ಅಲಾರಂ ಹಾಕಿ",
+        ]),
+        ("snz_knr_1", "snooze_dose", "kn_rom", [
+            "dose reminder 15 minutes snooze maadi",
+            "innu 15 nimisha bittu matte nenapisi",
+        ]),
+        ("snz_knr_2", "snooze_dose", "kn_rom", [
+            "tablet alarm mundoodi snooze maadu",
+            "swalpa hottu bittu alarm matte hakisi",
+        ]),
+        ("snz_hi_1", "snooze_dose", "hi", [
+            "मेरा दवाई रिमाइंडर 15 मिनट के लिए स्नूज़ कर दो",
+            "मुझे 15 मिनट बाद फिर से याद दिलाना",
+        ]),
+        ("snz_hi_2", "snooze_dose", "hi", [
+            "अभी के लिए अलार्म थोड़ा आगे बढ़ा दो",
+            "डोज़ रिमाइंडर को स्नूज़ कीजिए",
+        ]),
+        ("snz_hi_3", "snooze_dose", "hi", [
+            "दवाई का अलार्म पंद्रह मिनट बाद बजाओ",
+            "गोली का रिमाइंडर कुछ देर टाल दो",
+        ]),
+        ("snz_hir_1", "snooze_dose", "hi_rom", [
+            "reminder 15 minute snooze kar do",
+            "mujhe 15 min baad yaad dilana",
+        ]),
+        ("snz_hir_2", "snooze_dose", "hi_rom", [
+            "dawai alarm thoda aage badhao snooze karo",
+            "abhi wala reminder 15 minutes delay karo",
+        ]),
+        ("snz_cs_1", "snooze_dose", "code_switch", [
+            "dolo reminder 15 minutes snooze maadi",
+            "alarm thodi der snooze kar do",
+        ]),
+        ("snz_cs_2", "snooze_dose", "code_switch", [
+            "morning tablet reminder 15 min baad snooze maadu",
+            "dose alert 15 mins postpone kar do",
+        ]),
+
+        # ================= 13. greeting_help =================
+        ("grt_en_1", "greeting_help", "en", [
+            "good morning nityamed how are you",
+            "hello assistant what can you help me with",
+        ]),
+        ("grt_en_2", "greeting_help", "en", [
+            "tell me all things you can do for me",
+            "thank you very much for helping",
+        ]),
+        ("grt_en_3", "greeting_help", "en", [
+            "hi there introduce yourself",
+            "good evening can you assist me with my medicines",
+        ]),
+        ("grt_en_4", "greeting_help", "en", [
+            "how does this voice assistant work",
+            "show example commands i can ask you",
+        ]),
+        ("grt_kn_1", "greeting_help", "kn", [
+            "ನಮಸ್ಕಾರ ಸಹಾಯಕ ಹೇಗಿದ್ದೀರಾ",
+            "ನೀವು ನನಗೆ ಏನು ಸಹಾಯ ಮಾಡಬಲ್ಲಿರಿ",
+        ]),
+        ("grt_kn_2", "greeting_help", "kn", [
+            "ಶುಭೋದಯ ನಿತ್ಯಮೆಡ್ ಧನ್ಯವಾದಗಳು",
+            "ನೀವು ಯಾವ ಕೆಲಸಗಳನ್ನು ಮಾಡುತ್ತೀರಿ ತಿಳಿಸಿ",
+        ]),
+        ("grt_knr_1", "greeting_help", "kn_rom", [
+            "namaskara assistant neevu enu help madtira",
+            "hello nityamed tumba thanks",
+        ]),
+        ("grt_knr_2", "greeting_help", "kn_rom", [
+            "hi nityamed hegiddira enu madaballiri",
+            "nanna sahaya maadalu neevu enu madtira",
+        ]),
+        ("grt_hi_1", "greeting_help", "hi", [
+            "नमस्ते सहायक आप मेरी क्या मदद कर सकते हैं",
+            "बहुत बहुत धन्यवाद आपकी सहायता के लिए",
+        ]),
+        ("grt_hi_2", "greeting_help", "hi", [
+            "सुप्रभात नितायमेड आप कैसे हैं",
+            "आप किस किस काम में मेरी मदद कर सकते हैं",
+        ]),
+        ("grt_hir_1", "greeting_help", "hi_rom", [
+            "namaste assistant aap kya kya kar sakte ho",
+            "hello nityamed kaise madad karoge",
+        ]),
+        ("grt_hir_2", "greeting_help", "hi_rom", [
+            "good morning shukriya madad ke liye",
+            "hi assistant tum kya kar sakte ho batao",
+        ]),
+        ("grt_cs_1", "greeting_help", "code_switch", [
+            "hello nityamed enu help madಬಹುದು",
+            "hi assistant aap kaise help karte ho heli",
+        ]),
     ]
 
     samples: list[UtteranceSample] = []

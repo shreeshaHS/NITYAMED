@@ -253,3 +253,13 @@ export interface SyncBootstrapResponse {
   active_schedules: Array<Record<string, unknown>>;
   dose_events: DailyDoseItem[];
 }
+
+export interface StockTransactionItem {
+  id: string;
+  personal_med_id: string;
+  tx_type: string;
+  qty_delta: string;
+  balance_after: string;
+  notes: string | null;
+  created_at: string;
+}

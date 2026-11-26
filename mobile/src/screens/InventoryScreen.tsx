@@ -1,13 +1,18 @@
-/** Elevated Inventory Screen (Confirmed vs Projected Estimate) & Refill Prediction Cards. */
+/** Elevated Inventory Screen (Confirmed vs Projected Estimate, Purchases, Loss Adjustments, Ledger & Refill Alerts). */
 
 import React, { useState } from 'react';
-import { ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
-import { Card, EmptyState, FadeSlideIn, PrimaryButton } from '../components/AccessibleUI';
+import { Modal, ScrollView, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Card, EmptyState, FadeSlideIn, LabeledInput, PrimaryButton } from '../components/AccessibleUI';
 import { BellIcon, PackageIcon } from '../components/Icons';
 import { t } from '../i18n/translations';
 import { api } from '../services/api';
 import { Colors } from '../theme';
-import type { InventorySummaryItem, RefillPredictionItem, SupportedLang } from '../types/api';
+import type {
+  InventorySummaryItem,
+  RefillPredictionItem,
+  StockTransactionItem,
+  SupportedLang,
+} from '../types/api';
 import { generateUuid } from '../utils/uuid';
 
 interface InventoryScreenProps {
@@ -30,6 +35,18 @@ export function InventoryScreen({
 
   const [reconcileMedId, setReconcileMedId] = useState<string | null>(null);
   const [countedVal, setCountedVal] = useState('');
+
+  const [purchaseMedId, setPurchaseMedId] = useState<string | null>(null);
+  const [buyPacks, setBuyPacks] = useState('1');
+  const [buyLoose, setBuyLoose] = useState('0');
+
+  const [adjustMedId, setAdjustMedId] = useState<string | null>(null);
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('Expired or damaged tablets');
+
+  const [ledgerMedName, setLedgerMedName] = useState<string | null>(null);
+  const [ledgerItems, setLedgerItems] = useState<StockTransactionItem[]>([]);
+
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -41,6 +58,68 @@ export function InventoryScreen({
       await onRefresh();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to add pack.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePurchaseCustom = async (medId: string) => {
+    const packs = Number(buyPacks || '0');
+    const loose = Number(buyLoose || '0');
+    if ((Number.isNaN(packs) || packs <= 0) && (Number.isNaN(loose) || loose <= 0)) {
+      setMessage('Please enter packs or loose units greater than 0.');
+      return;
+    }
+    setBusyId(medId);
+    setMessage(null);
+    try {
+      await api.purchaseStock(medId, Math.max(0, Math.floor(packs)), String(Math.max(0, loose)), generateUuid());
+      setPurchaseMedId(null);
+      setBuyPacks('1');
+      setBuyLoose('0');
+      await onRefresh();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to record stock purchase.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDeductLoss = async (medId: string) => {
+    const num = Number(adjustQty || '0');
+    if (Number.isNaN(num) || num <= 0) {
+      setMessage('Please enter a positive quantity to deduct.');
+      return;
+    }
+    setBusyId(medId);
+    setMessage(null);
+    try {
+      await api.adjustStock(
+        medId,
+        'EXPIRED_DAMAGED_LOST',
+        `-${Math.abs(num)}`,
+        adjustReason.trim() || 'Expired or damaged stock deducted',
+        generateUuid()
+      );
+      setAdjustMedId(null);
+      setAdjustQty('');
+      await onRefresh();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to adjust stock.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleOpenLedger = async (medId: string, name: string) => {
+    setBusyId(medId);
+    setMessage(null);
+    try {
+      const txList = await api.listStockTransactions(medId);
+      setLedgerItems(txList);
+      setLedgerMedName(name);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Unable to load stock ledger.');
     } finally {
       setBusyId(null);
     }
@@ -116,25 +195,115 @@ export function InventoryScreen({
                 </View>
 
                 {isOnline && (
-                  <View className="flex-row gap-2.5">
-                    <View className="flex-1">
-                      <PrimaryButton
-                        title={t(lang, 'addStrip')}
-                        variant="emerald"
-                        loading={busyId === item.personal_med_id}
-                        onPress={() => handleAddOnePack(item.personal_med_id)}
-                      />
+                  <View className="gap-2">
+                    <View className="flex-row gap-2">
+                      <View className="flex-1">
+                        <PrimaryButton
+                          title={t(lang, 'addStrip')}
+                          variant="emerald"
+                          loading={busyId === item.personal_med_id}
+                          onPress={() => handleAddOnePack(item.personal_med_id)}
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <PrimaryButton
+                          title={t(lang, 'buyStockBtn')}
+                          variant="primary"
+                          onPress={() => {
+                            setPurchaseMedId(
+                              purchaseMedId === item.personal_med_id ? null : item.personal_med_id
+                            );
+                            setAdjustMedId(null);
+                            setReconcileMedId(null);
+                          }}
+                        />
+                      </View>
                     </View>
-                    <View className="flex-1">
-                      <PrimaryButton
-                        title={t(lang, 'reconcile')}
-                        variant="outline"
-                        onPress={() => {
-                          setReconcileMedId(item.personal_med_id);
-                          setCountedVal(item.confirmed_stock);
-                        }}
-                      />
+
+                    <View className="flex-row gap-2">
+                      <View className="flex-1">
+                        <PrimaryButton
+                          title={t(lang, 'reconcile')}
+                          variant="outline"
+                          onPress={() => {
+                            setReconcileMedId(
+                              reconcileMedId === item.personal_med_id ? null : item.personal_med_id
+                            );
+                            setCountedVal(item.confirmed_stock);
+                            setPurchaseMedId(null);
+                            setAdjustMedId(null);
+                          }}
+                        />
+                      </View>
+                      <View className="flex-1">
+                        <PrimaryButton
+                          title={t(lang, 'adjustLossBtn')}
+                          variant="outline"
+                          onPress={() => {
+                            setAdjustMedId(
+                              adjustMedId === item.personal_med_id ? null : item.personal_med_id
+                            );
+                            setAdjustQty('');
+                            setPurchaseMedId(null);
+                            setReconcileMedId(null);
+                          }}
+                        />
+                      </View>
                     </View>
+
+                    <PrimaryButton
+                      title={t(lang, 'ledgerHistoryBtn')}
+                      variant="secondary"
+                      loading={busyId === item.personal_med_id}
+                      onPress={() => handleOpenLedger(item.personal_med_id, item.display_name)}
+                    />
+                  </View>
+                )}
+
+                {purchaseMedId === item.personal_med_id && (
+                  <View className="mt-3.5 p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-200 gap-2.5">
+                    <LabeledInput
+                      label="Full Packs / Strips Purchased"
+                      value={buyPacks}
+                      onChangeText={setBuyPacks}
+                      keyboardType="number-pad"
+                    />
+                    <LabeledInput
+                      label={`Extra Loose Units (${item.stock_unit})`}
+                      value={buyLoose}
+                      onChangeText={setBuyLoose}
+                      keyboardType="decimal-pad"
+                    />
+                    <PrimaryButton
+                      title="Save Stock Purchase"
+                      variant="emerald"
+                      loading={busyId === item.personal_med_id}
+                      onPress={() => handlePurchaseCustom(item.personal_med_id)}
+                    />
+                  </View>
+                )}
+
+                {adjustMedId === item.personal_med_id && (
+                  <View className="mt-3.5 p-3.5 bg-red-50/70 rounded-2xl border border-red-200 gap-2.5">
+                    <LabeledInput
+                      label={`Quantity Lost / Expired (${item.stock_unit})`}
+                      value={adjustQty}
+                      onChangeText={setAdjustQty}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g. 2"
+                    />
+                    <LabeledInput
+                      label="Reason / Notes"
+                      value={adjustReason}
+                      onChangeText={setAdjustReason}
+                      placeholder="Expired or damaged tablets"
+                    />
+                    <PrimaryButton
+                      title="Confirm Deduction"
+                      variant="danger"
+                      loading={busyId === item.personal_med_id}
+                      onPress={() => handleDeductLoss(item.personal_med_id)}
+                    />
                   </View>
                 )}
 
@@ -198,6 +367,53 @@ export function InventoryScreen({
           </View>
         ))}
       </View>
+
+      <Modal visible={ledgerMedName !== null} animationType="slide">
+        <ScrollView
+          className="flex-1 bg-surface-canvas"
+          contentContainerStyle={{
+            padding: 24,
+            paddingBottom: 56,
+            maxWidth: 660,
+            width: '100%',
+            alignSelf: 'center',
+          }}
+        >
+          <Card className="p-6">
+            <Text className="text-[22px] font-extrabold text-ink mb-4">
+              {ledgerMedName} — Stock Ledger
+            </Text>
+            {ledgerItems.length === 0 ? (
+              <Text className="text-[14.5px] text-ink-muted mb-4">No stock transactions recorded yet.</Text>
+            ) : (
+              <View className="gap-2.5 mb-4">
+                {ledgerItems.map((tx) => (
+                  <View
+                    key={tx.id}
+                    className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200"
+                  >
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-[13.5px] font-bold text-ink">
+                        {tx.tx_type}
+                      </Text>
+                      <Text className="text-[14px] font-extrabold text-brand-dark">
+                        Delta: {tx.qty_delta} • Bal: {tx.balance_after}
+                      </Text>
+                    </View>
+                    {tx.notes && (
+                      <Text className="text-[13px] text-ink-muted mt-1">{tx.notes}</Text>
+                    )}
+                    <Text className="text-[11.5px] text-ink-soft mt-1">
+                      {new Date(tx.created_at).toLocaleString()}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <PrimaryButton title="Close" onPress={() => setLedgerMedName(null)} />
+          </Card>
+        </ScrollView>
+      </Modal>
     </ScrollView>
   );
 }

@@ -81,6 +81,7 @@ export default function App() {
 
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [medicines, setMedicines] = useState<PersonalMedicine[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
   const [todayDoses, setTodayDoses] = useState<DailyDoseItem[]>([]);
   const [inventory, setInventory] = useState<InventorySummaryItem[]>([]);
   const [refills, setRefills] = useState<RefillPredictionItem[]>([]);
@@ -94,9 +95,9 @@ export default function App() {
     () => getWebNotificationPermission()
   );
 
-  const loadData = useCallback(async (onlineOverride?: boolean) => {
+  const loadData = useCallback(async (onlineOverride?: boolean, dateOverride?: string) => {
     const online = onlineOverride ?? isOnline;
-    const todayPrefix = getLocalDateString();
+    const targetDate = dateOverride ?? selectedDate;
 
     if (Platform.OS !== 'web') {
       const cnt = await offlineDb.getPendingOutboxCount();
@@ -133,7 +134,7 @@ export default function App() {
         setReport(rep);
         setNotifications(notifHist);
 
-        const daily = await api.getDailyDoses(todayPrefix);
+        const daily = await api.getDailyDoses(targetDate);
         setTodayDoses(daily);
 
         if (Platform.OS !== 'web') {
@@ -149,14 +150,34 @@ export default function App() {
     if (Platform.OS !== 'web') {
       const [localMeds, localDoses, cnt] = await Promise.all([
         offlineDb.getLocalMedicines(),
-        offlineDb.getLocalDailyDoses(todayPrefix),
+        offlineDb.getLocalDailyDoses(targetDate),
         offlineDb.getPendingOutboxCount(),
       ]);
       setMedicines(localMeds);
       setTodayDoses(localDoses);
       setPendingSyncCount(cnt);
     }
-  }, [isOnline]);
+  }, [isOnline, selectedDate]);
+
+  const handleSelectDate = useCallback(
+    async (nextDate: string) => {
+      setSelectedDate(nextDate);
+      if (isOnline) {
+        try {
+          const daily = await api.getDailyDoses(nextDate);
+          setTodayDoses(daily);
+          return;
+        } catch {
+          // Fall back to local cache if transient network issue.
+        }
+      }
+      if (Platform.OS !== 'web') {
+        const localDoses = await offlineDb.getLocalDailyDoses(nextDate);
+        setTodayDoses(localDoses);
+      }
+    },
+    [isOnline]
+  );
 
   useEffect(() => {
     const unsub = NetInfo.addEventListener((state) => {
@@ -497,6 +518,8 @@ export default function App() {
             lang={lang}
             displayName={profile?.display_name}
             doses={todayDoses}
+            selectedDate={selectedDate}
+            onSelectDate={handleSelectDate}
             isOnline={isOnline}
             pendingSyncCount={pendingSyncCount}
             onRefresh={() => loadData()}

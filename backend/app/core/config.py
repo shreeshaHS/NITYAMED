@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
+    auth_rate_limit_enabled: bool = True
+    auth_rate_limit_max_requests: int = 20
+    auth_rate_limit_window_sec: int = 60
 
     cors_origins: str = "http://localhost:8081,http://127.0.0.1:8081,http://localhost:8082,http://127.0.0.1:8082,http://localhost:19006,http://127.0.0.1:19006,http://localhost:3000"
     cron_secret: str = "dev-cron-secret"

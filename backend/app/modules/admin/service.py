@@ -1,5 +1,6 @@
 """System administrator services for catalogue curation and anonymized metrics."""
 
+import json
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -18,6 +19,7 @@ from app.modules.assistant.nlp import MODEL_PATH
 from app.modules.auth.email_service import send_email_detailed
 from app.modules.auth.models import PatientProfile, User
 from app.modules.medicines.models import MedicineCatalogue, MedicineEducation, PersonalMedicine
+from app.modules.medicines.policy import check_medicine_policy
 from app.modules.medicines.schemas import CatalogueItemResponse
 from app.modules.notifications.models import Notification
 from app.modules.schedules.models import DoseEvent
@@ -27,6 +29,12 @@ def create_catalogue_entry(
     db: Session, payload: AdminCatalogueCreateRequest
 ) -> CatalogueItemResponse:
     """Create a verified medicine catalogue record and its education entry."""
+    allowed, reason = check_medicine_policy(
+        payload.brand_name, payload.generic_name, payload.active_ingredients
+    )
+    if not allowed:
+        raise AppError(403, "REGULATORY_POLICY_VIOLATION", reason or "Medicine violates safety policy")
+
     item = MedicineCatalogue(
         brand_name=payload.brand_name.strip(),
         generic_name=payload.generic_name.strip(),
@@ -178,6 +186,15 @@ def get_anonymized_metrics(db: Session) -> AdminHealthMetricsResponse:
         or (settings.smtp_host and settings.smtp_user and settings.smtp_password)
     )
     ml_ready = MODEL_PATH.exists()
+    selected_model_name: str | None = None
+    if ml_ready:
+        report_path = MODEL_PATH.parent / "benchmark_report.json"
+        if report_path.exists():
+            try:
+                selected_model_name = json.loads(report_path.read_text(encoding="utf-8")).get("selected_model")
+            except (OSError, ValueError):
+                selected_model_name = None
+        selected_model_name = selected_model_name or "hybrid_tfidf_logreg"
 
     return AdminHealthMetricsResponse(
         total_users=total_users,
@@ -194,7 +211,7 @@ def get_anonymized_metrics(db: Session) -> AdminHealthMetricsResponse:
         smtp_configured=smtp_configured,
         require_email_verification=settings.require_email_verification,
         ml_model_ready=ml_ready,
-        ml_model_name="hybrid_tfidf_logreg" if ml_ready else None,
+        ml_model_name=selected_model_name,
     )
 
 

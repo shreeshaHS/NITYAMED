@@ -19,7 +19,12 @@ def build_engine(database_url: str):
             database_url,
             connect_args={"check_same_thread": False},
         )
-    return create_engine(database_url, pool_pre_ping=True)
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_timeout=10,
+    )
 
 
 settings = get_settings()

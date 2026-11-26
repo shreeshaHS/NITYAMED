@@ -11,6 +11,7 @@ from app.modules.auth.models import User
 from app.modules.medicines import service
 from app.modules.medicines.schemas import (
     CatalogueItemResponse,
+    CatalogueVerificationRequest,
     DosageForm,
     MedicineEducationResponse,
     MedicineStatus,
@@ -28,19 +29,33 @@ medicines_router = APIRouter(prefix="/medicines", tags=["Personal Medicines"])
 def search_catalogue(
     q: str = Query(default="", max_length=100),
     form: DosageForm | None = None,
+    manufacturer: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=20, ge=1, le=50),
     include_external: bool = Query(default=True),
     _: User = Depends(require_role("patient", "admin")),
     db: Session = Depends(get_db),
 ) -> list[CatalogueItemResponse]:
-    """Search verified local medicines and optionally enrich via live openFDA/RxNorm APIs."""
+    """Search verified catalogue medicines by brand, composition, or manufacturer company."""
     return service.search_catalogue(
         db,
         query=q,
         dosage_form=form,
+        manufacturer=manufacturer,
         limit=limit,
         include_external=include_external,
     )
+
+
+@catalogue_router.post(
+    "/requests", response_model=CatalogueItemResponse, status_code=status.HTTP_201_CREATED
+)
+def request_catalogue_verification(
+    payload: CatalogueVerificationRequest,
+    _: User = Depends(require_role("patient", "admin")),
+    db: Session = Depends(get_db),
+) -> CatalogueItemResponse:
+    """Submit a missing medicine as unverified for administrator regulatory review."""
+    return service.submit_catalogue_verification_request(db, payload)
 
 
 @catalogue_router.get("/{catalogue_id}/education", response_model=MedicineEducationResponse)

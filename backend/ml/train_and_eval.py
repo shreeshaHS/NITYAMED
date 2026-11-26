@@ -26,7 +26,7 @@ from ml.dataset import UtteranceSample, build_multilingual_dataset
 ARTIFACTS_DIR = Path(__file__).resolve().parent / "artifacts"
 MODEL_PATH = ARTIFACTS_DIR / "intent_classifier.joblib"
 REPORT_PATH = ARTIFACTS_DIR / "benchmark_report.json"
-OOS_CONFIDENCE_THRESHOLD = 0.25
+OOS_CONFIDENCE_THRESHOLD = 0.28
 # Preserve Indic Unicode combining marks (Kannada/Devanagari matras) inside tokens.
 INDIC_TOKEN_PATTERN = r"[^\s?.!,;:\"'()\[\]{}]+"
 
