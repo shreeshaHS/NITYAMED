@@ -483,3 +483,153 @@ def test_conversational_assistant_company_slot_fill_and_voice_skip_snooze(
     assert cat_info.status_code == 200
     assert cat_info.json()["intent"] == "medicine_info"
     assert "Glycomet" in cat_info.json()["reply_text"] or "Metformin" in cat_info.json()["reply_text"]
+
+
+def test_hybrid_tool_agent_compound_actions_and_safety_gate(
+    client: TestClient, db_session: Session, monkeypatch
+) -> None:
+    import httpx
+    from app.core.config import get_settings
+
+    headers = _auth_header(client, "toolagent@example.com")
+    med = _setup_dolo_with_schedule(client, db_session, headers)
+    assert float(med["confirmed_stock"]) == 15.0
+
+    # Clinical safety guardrail must refuse deterministically BEFORE calling Gemini/HF
+    with monkeypatch.context() as mp:
+        mp.setenv("GEMINI_API_KEY", "fake_gemini_key")
+        get_settings.cache_clear()
+        called_network = {"flag": False}
+
+        def _fail_if_called(*args, **kwargs):
+            called_network["flag"] = True
+            raise AssertionError("Safety-blocked query must not hit external LLM")
+
+        mp.setattr(httpx, "post", _fail_if_called)
+        unsafe = client.post(
+            "/api/v1/assistant/text",
+            headers=headers,
+            json={"text": "Can I double my dolo dosage for severe pain?"},
+        )
+        assert unsafe.status_code == 200
+        assert unsafe.json()["intent"] == "out_of_scope_clinical"
+        assert unsafe.json()["classification_source"] == "safety_guard"
+        assert called_network["flag"] is False
+    get_settings.cache_clear()
+
+    # Compound multi-tool Gemini flow: take dose + purchase 1 strip staged behind 1 confirmation gate
+    with monkeypatch.context() as mp:
+        mp.setenv("GEMINI_API_KEY", "fake_gemini_key")
+        get_settings.cache_clear()
+        turn_count = {"n": 0}
+
+        class _GeminiResp:
+            def __init__(self, payload: dict) -> None:
+                self._payload = payload
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return self._payload
+
+        def _mock_gemini_post(url: str, **kwargs):
+            turn_count["n"] += 1
+            if turn_count["n"] == 1:
+                return _GeminiResp(
+                    {
+                        "candidates": [
+                            {
+                                "content": {
+                                    "parts": [
+                                        {
+                                            "functionCall": {
+                                                "name": "stage_confirm_dose",
+                                                "args": {"medicine_name": "Dolo"},
+                                            }
+                                        },
+                                        {
+                                            "functionCall": {
+                                                "name": "stage_stock_purchase",
+                                                "args": {"medicine_name": "Dolo", "packs": 1},
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                )
+            return _GeminiResp(
+                {
+                    "candidates": [
+                        {
+                            "content": {
+                                "parts": [
+                                    {
+                                        "text": (
+                                            "Please confirm taking 1 tablet of Dolo 650 and adding +10 tablets to stock."
+                                        )
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            )
+
+        mp.setattr(httpx, "post", _mock_gemini_post)
+        compound = client.post(
+            "/api/v1/assistant/text",
+            headers=headers,
+            json={"text": "I took my morning Dolo and bought 1 strip of Dolo"},
+        )
+        assert compound.status_code == 200
+        comp_body = compound.json()
+        assert comp_body["classification_source"] == "llm_agent"
+        assert comp_body["intent"] == "compound_action"
+        assert comp_body["requires_confirmation"] is True
+        assert comp_body["proposed_action"]["action_type"] == "batch_actions"
+        assert len(comp_body["proposed_action"]["actions"]) == 2
+    get_settings.cache_clear()
+
+    # Voice "yes" executes BOTH confirmed dose (-1) and stock purchase (+15 strip) => 15 - 1 + 15 = 29
+    confirm_both = client.post(
+        "/api/v1/assistant/text",
+        headers=headers,
+        json={"text": "yes"},
+    )
+    assert confirm_both.status_code == 200
+    assert confirm_both.json()["intent"] == "compound_action"
+    assert "29.00" in confirm_both.json()["reply_text"]
+
+    # Zero-tool LLM output must fall back to Tier-2 local ML + grounded lookup safely
+    with monkeypatch.context() as mp:
+        mp.setenv("HF_TOKEN", "hf_test_tool")
+        get_settings.cache_clear()
+
+        class _NoToolHFResp:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "You have 29.00 tablets of Dolo 650 left.",
+                            }
+                        }
+                    ]
+                }
+
+        mp.setattr(httpx, "post", lambda url, **kwargs: _NoToolHFResp())
+        fallback_resp = client.post(
+            "/api/v1/assistant/text",
+            headers=headers,
+            json={"text": "How many dolo tablets remaining?"},
+        )
+        assert fallback_resp.status_code == 200
+        assert fallback_resp.json()["classification_source"] != "llm_agent"
+        assert "29.00" in fallback_resp.json()["reply_text"]
+    get_settings.cache_clear()

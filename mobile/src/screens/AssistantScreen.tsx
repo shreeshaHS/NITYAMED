@@ -134,7 +134,8 @@ export function AssistantScreen({ lang, isOnline, onDataChanged }: AssistantScre
         (res.intent === 'confirm_dose' ||
           res.intent === 'update_stock_purchase' ||
           res.intent === 'skip_dose' ||
-          res.intent === 'snooze_dose')
+          res.intent === 'snooze_dose' ||
+          res.intent === 'compound_action')
       ) {
         await onDataChanged();
       }

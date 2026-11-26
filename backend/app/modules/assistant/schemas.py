@@ -30,7 +30,9 @@ class AssistantResponse(BaseModel):
     language: SupportedLang
     intent: str
     confidence: float
-    classification_source: Literal["safety_guard", "rule", "ml_model", "llm_fallback", "clarification"]
+    classification_source: Literal[
+        "safety_guard", "rule", "ml_model", "llm_fallback", "llm_agent", "clarification"
+    ]
     requires_confirmation: bool = False
     confirmation_token: UUID | None = None
     proposed_action: dict | None = None

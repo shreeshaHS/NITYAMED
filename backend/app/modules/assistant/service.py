@@ -16,6 +16,7 @@ from app.modules.assistant.adapters import (
     STTAdapter,
     TTSAdapter,
 )
+from app.modules.assistant.agent import HybridToolAgent
 from app.modules.assistant.models import ConversationState
 from app.modules.assistant.nlp import (
     classify_intent,
@@ -24,11 +25,14 @@ from app.modules.assistant.nlp import (
     extract_quantity_and_unit,
     extract_snooze_minutes,
     extract_time_window,
+    is_greeting_or_help,
+    is_unsafe_clinical_query,
     match_user_medicines,
     normalize_text,
     parse_voice_confirmation_reply,
 )
 from app.modules.assistant.schemas import AssistantConfirmRequest, AssistantResponse
+from app.modules.assistant.tools import ToolExecutionContext
 from app.modules.auth.models import PatientProfile, User
 from app.modules.inventory import service as inventory_service
 from app.modules.inventory.schemas import PurchaseRequest
@@ -310,11 +314,38 @@ def handle_text_query(
             confidence = 0.95
             source = "rule"
 
-    if intent == "unknown":
-        intent, confidence, source = classify_intent(norm_text)
+    if intent == "unknown" and is_unsafe_clinical_query(norm_text):
+        intent, confidence, source = "out_of_scope_clinical", 1.0, "safety_guard"
 
     llm = llm_adapter or BoundedLLMAdapter()
     tts = tts_adapter or TTSAdapter()
+    tool_ctx = ToolExecutionContext(
+        db=db,
+        user=user,
+        profile=profile,
+        tz=tz,
+        active_meds=active_meds,
+    )
+
+    agent_result = None
+    if (
+        intent == "unknown"
+        and not (awaiting_slot and awaiting_intent)
+        and not is_greeting_or_help(norm_text)
+    ):
+        agent_result = HybridToolAgent().run(
+            user_text=raw_text,
+            target_language=detected_lang,
+            history=list(ctx_existing.get("history") or []),
+            ctx=tool_ctx,
+        )
+        if agent_result is not None:
+            intent = agent_result.primary_intent
+            confidence = 0.95
+            source = "llm_agent"
+
+    if intent == "unknown":
+        intent, confidence, source = classify_intent(norm_text)
 
     # Hybrid fallback: if local ML has low confidence (e.g., unseen regional dialect),
     # let the Bounded LLM map ONLY to an allowed intent while keeping safety gates intact.
@@ -393,6 +424,30 @@ def handle_text_query(
         return _finalize(
             _CLINICAL_REFUSAL[detected_lang],
             final_source="safety_guard",
+            allow_conversational_llm=False,
+        )
+
+    if agent_result is not None:
+        if tool_ctx.staged_actions:
+            token = uuid.uuid4()
+            proposed = (
+                tool_ctx.staged_actions[0]
+                if len(tool_ctx.staged_actions) == 1
+                else {"action_type": "batch_actions", "actions": tool_ctx.staged_actions}
+            )
+            state.pending_action = proposed
+            state.confirmation_token = token
+            return _finalize(
+                agent_result.reply_text,
+                requires_confirmation=True,
+                token=token,
+                proposed_action=proposed,
+                med_id_context=tool_ctx.med_id_context,
+                allow_conversational_llm=False,
+            )
+        return _finalize(
+            agent_result.reply_text,
+            med_id_context=tool_ctx.med_id_context,
             allow_conversational_llm=False,
         )
 
@@ -918,12 +973,94 @@ def handle_text_query(
     return _finalize(_OOS_REPLY[detected_lang])
 
 
+def _execute_single_action(
+    db: Session,
+    user: User,
+    pending: dict,
+    lang: str,
+) -> tuple[str, str]:
+    """Execute one staged mutation and return (intent_name, localized_reply)."""
+    action_type = pending.get("action_type")
+    if action_type == "confirm_dose":
+        res = schedules_service.confirm_dose(
+            db,
+            user,
+            uuid.UUID(pending["dose_event_id"]),
+            DoseConfirmRequest(
+                actual_qty=Decimal(pending["actual_qty"]),
+                client_event_id=uuid.uuid4(),
+            ),
+        )
+        if lang == "kn":
+            confirm_reply = (
+                f"{pending['medicine_name']} ತೆಗೆದುಕೊಂಡಿದ್ದೀರಿ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ ({res.dose.status}). "
+                f"ಬಾಕಿ ಸ್ಟಾಕ್: {res.updated_confirmed_stock} {pending['unit']}."
+            )
+        elif lang == "hi":
+            confirm_reply = (
+                f"{pending['medicine_name']} को लिया गया मार्क कर दिया गया है ({res.dose.status})। "
+                f"बचा स्टॉक: {res.updated_confirmed_stock} {pending['unit']}।"
+            )
+        else:
+            confirm_reply = (
+                f"Confirmed {pending['medicine_name']} as {res.dose.status}. "
+                f"Remaining stock: {res.updated_confirmed_stock} {pending['unit']}(s)."
+            )
+        return "confirm_dose", confirm_reply
+
+    if action_type == "update_stock_purchase":
+        tx = inventory_service.record_purchase(
+            db,
+            user,
+            uuid.UUID(pending["personal_med_id"]),
+            PurchaseRequest(
+                packs=int(pending["packs"]),
+                loose_units=Decimal(pending["loose_units"]),
+                notes="Added via NityaMed assistant after confirmation",
+                client_event_id=uuid.uuid4(),
+            ),
+        )
+        if lang == "kn":
+            stock_reply = (
+                f"{pending['medicine_name']} ಸ್ಟಾಕ್‌ಗೆ +{pending['total_units_to_add']} {pending['unit']} ಸೇರಿಸಲಾಗಿದೆ. "
+                f"ಹೊಸ ದೃಢೀಕೃತ ಸ್ಟಾಕ್: {tx.balance_after}."
+            )
+        elif lang == "hi":
+            stock_reply = (
+                f"{pending['medicine_name']} के स्टॉक में +{pending['total_units_to_add']} {pending['unit']} जोड़ दिए गए हैं। "
+                f"नया कन्फर्म स्टॉक: {tx.balance_after}।"
+            )
+        else:
+            stock_reply = (
+                f"Updated {pending['medicine_name']} stock by +{pending['total_units_to_add']} {pending['unit']}(s). "
+                f"New confirmed balance: {tx.balance_after}."
+            )
+        return "update_stock_purchase", stock_reply
+
+    if action_type == "skip_dose":
+        schedules_service.skip_dose(
+            db,
+            user,
+            uuid.UUID(pending["dose_event_id"]),
+            DoseSkipRequest(client_event_id=uuid.uuid4()),
+        )
+        if lang == "kn":
+            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) ಡೋಸ್ ಅನ್ನು ಸ್ಕಿಪ್ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ. ಸ್ಟಾಕ್ ಕಡಿತವಾಗಿಲ್ಲ."
+        elif lang == "hi":
+            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) की डोज़ को स्किप मार्क कर दिया गया है। स्टॉक में कोई कटौती नहीं हुई।"
+        else:
+            skip_reply = f"Marked {pending['medicine_name']} ({pending.get('time', '')}) as skipped with no stock deduction."
+        return "skip_dose", skip_reply
+
+    raise AppError(400, "UNSUPPORTED_PENDING_ACTION", "Unsupported assistant action")
+
+
 def execute_confirmed_action(
     db: Session,
     user: User,
     payload: AssistantConfirmRequest,
 ) -> AssistantResponse:
-    """Execute or cancel a staged assistant mutation after explicit user confirmation."""
+    """Execute or cancel a single or batch staged assistant mutation after explicit user confirmation."""
     now = datetime.now(UTC)
     state = db.scalar(
         select(ConversationState).where(
@@ -955,96 +1092,26 @@ def execute_confirmed_action(
         )
 
     action_type = pending.get("action_type")
-    if action_type == "confirm_dose":
-        res = schedules_service.confirm_dose(
-            db,
-            user,
-            uuid.UUID(pending["dose_event_id"]),
-            DoseConfirmRequest(
-                actual_qty=Decimal(pending["actual_qty"]),
-                client_event_id=uuid.uuid4(),
-            ),
-        )
-        if lang == "kn":
-            confirm_reply = (
-                f"{pending['medicine_name']} ತೆಗೆದುಕೊಂಡಿದ್ದೀರಿ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ ({res.dose.status}). "
-                f"ಬಾಕಿ ಸ್ಟಾಕ್: {res.updated_confirmed_stock} {pending['unit']}."
-            )
-        elif lang == "hi":
-            confirm_reply = (
-                f"{pending['medicine_name']} को लिया गया मार्क कर दिया गया है ({res.dose.status})। "
-                f"बचा स्टॉक: {res.updated_confirmed_stock} {pending['unit']}।"
-            )
-        else:
-            confirm_reply = (
-                f"Confirmed {pending['medicine_name']} as {res.dose.status}. "
-                f"Remaining stock: {res.updated_confirmed_stock} {pending['unit']}(s)."
-            )
+    if action_type == "batch_actions":
+        sub_actions = list(pending.get("actions") or [])
+        if not sub_actions:
+            raise AppError(400, "UNSUPPORTED_PENDING_ACTION", "No actions in batch confirmation")
+        replies = [_execute_single_action(db, user, act, lang)[1] for act in sub_actions]
         return AssistantResponse(
-            reply_text=confirm_reply,
+            reply_text=" ".join(replies),
             language=lang,  # type: ignore[arg-type]
-            intent="confirm_dose",
+            intent="compound_action",
             confidence=1.0,
-            classification_source="rule",
+            classification_source="llm_agent",
             requires_confirmation=False,
         )
 
-    if action_type == "update_stock_purchase":
-        tx = inventory_service.record_purchase(
-            db,
-            user,
-            uuid.UUID(pending["personal_med_id"]),
-            PurchaseRequest(
-                packs=int(pending["packs"]),
-                loose_units=Decimal(pending["loose_units"]),
-                notes="Added via NityaMed assistant after confirmation",
-                client_event_id=uuid.uuid4(),
-            ),
-        )
-        if lang == "kn":
-            stock_reply = (
-                f"{pending['medicine_name']} ಸ್ಟಾಕ್‌ಗೆ +{pending['total_units_to_add']} {pending['unit']} ಸೇರಿಸಲಾಗಿದೆ. "
-                f"ಹೊಸ ದೃಢೀಕೃತ ಸ್ಟಾಕ್: {tx.balance_after}."
-            )
-        elif lang == "hi":
-            stock_reply = (
-                f"{pending['medicine_name']} के स्टॉक में +{pending['total_units_to_add']} {pending['unit']} जोड़ दिए गए हैं। "
-                f"नया कन्फर्म स्टॉक: {tx.balance_after}।"
-            )
-        else:
-            stock_reply = (
-                f"Updated {pending['medicine_name']} stock by +{pending['total_units_to_add']} {pending['unit']}(s). "
-                f"New confirmed balance: {tx.balance_after}."
-            )
-        return AssistantResponse(
-            reply_text=stock_reply,
-            language=lang,  # type: ignore[arg-type]
-            intent="update_stock_purchase",
-            confidence=1.0,
-            classification_source="rule",
-            requires_confirmation=False,
-        )
-
-    if action_type == "skip_dose":
-        schedules_service.skip_dose(
-            db,
-            user,
-            uuid.UUID(pending["dose_event_id"]),
-            DoseSkipRequest(client_event_id=uuid.uuid4()),
-        )
-        if lang == "kn":
-            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) ಡೋಸ್ ಅನ್ನು ಸ್ಕಿಪ್ ಎಂದು ದಾಖಲಿಸಲಾಗಿದೆ. ಸ್ಟಾಕ್ ಕಡಿತವಾಗಿಲ್ಲ."
-        elif lang == "hi":
-            skip_reply = f"{pending['medicine_name']} ({pending.get('time', '')}) की डोज़ को स्किप मार्क कर दिया गया है। स्टॉक में कोई कटौती नहीं हुई।"
-        else:
-            skip_reply = f"Marked {pending['medicine_name']} ({pending.get('time', '')}) as skipped with no stock deduction."
-        return AssistantResponse(
-            reply_text=skip_reply,
-            language=lang,  # type: ignore[arg-type]
-            intent="skip_dose",
-            confidence=1.0,
-            classification_source="rule",
-            requires_confirmation=False,
-        )
-
-    raise AppError(400, "UNSUPPORTED_PENDING_ACTION", "Unsupported assistant action")
+    final_intent, reply = _execute_single_action(db, user, pending, lang)
+    return AssistantResponse(
+        reply_text=reply,
+        language=lang,  # type: ignore[arg-type]
+        intent=final_intent,
+        confidence=1.0,
+        classification_source="rule",
+        requires_confirmation=False,
+    )

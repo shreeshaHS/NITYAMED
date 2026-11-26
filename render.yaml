@@ -43,6 +43,10 @@ services:
         sync: false # Optional Hugging Face token for Whisper STT & dialect LLM fallback
       - key: HF_SPACE_URL
         sync: false # Optional Hugging Face Space URL for fine-tuned MuRIL classifier
+      - key: GEMINI_API_KEY
+        sync: false # Optional Google Gemini API key for tool-calling AI assistant
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
 
   - type: web
     name: nityamed-web
